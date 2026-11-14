@@ -17,6 +17,7 @@ import {
 import type { Case, Evidence, Inconsistency } from '@/types'
 
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms))
+const mockEvidenceFiles = new Map<string, File>()
 
 export const handlers = [
   // ─── Cases ────────────────────────────────────────────────────────────────
@@ -111,6 +112,7 @@ export const handlers = [
         metadata: {},
       }
       mockEvidence.push(newEv)
+      mockEvidenceFiles.set(newEv.id, file)
       return newEv
     })
     return HttpResponse.json({ items }, { status: 201 })
@@ -121,6 +123,24 @@ export const handlers = [
     const ev = mockEvidence.find(e => e.id === params.id)
     if (!ev) return HttpResponse.json({ detail: 'Not found', status_code: 404 }, { status: 404 })
     return HttpResponse.json(ev)
+  }),
+
+  http.get('/api/v1/evidence/:id/file', async ({ params }) => {
+    const file = mockEvidenceFiles.get(params.id as string)
+    if (!file) return HttpResponse.json({ detail: 'Preview unavailable. Upload this file again to preview it.' }, { status: 404 })
+    const extension = file.name.split('.').pop()?.toLowerCase() || ''
+    const mimeTypes: Record<string, string> = {
+      pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+      gif: 'image/gif', webp: 'image/webp', txt: 'text/plain', csv: 'text/csv',
+      json: 'application/json', eml: 'message/rfc822', mp3: 'audio/mpeg', wav: 'audio/wav',
+      mp4: 'video/mp4',
+    }
+    return new HttpResponse(file, {
+      headers: {
+        'Content-Type': file.type || mimeTypes[extension] || 'application/octet-stream',
+        'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+      },
+    })
   }),
 
   http.get('/api/v1/evidence/:id/chunks', async ({ params }) => {

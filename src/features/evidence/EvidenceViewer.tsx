@@ -22,6 +22,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
+import { API_BASE_URL } from '@/lib/constants'
 
 export default function EvidenceViewer() {
   const { caseId, evidenceId } = useParams<{ caseId: string; evidenceId: string }>()
@@ -31,6 +32,9 @@ export default function EvidenceViewer() {
   const { data: chunks } = useEvidenceChunks(evidenceId)
   const { data: custody } = useCustodyLog(evidenceId)
   const verify = useVerifyEvidence()
+  const fileUrl = evidenceId
+    ? `${API_BASE_URL}/evidence/${encodeURIComponent(evidenceId)}/file`
+    : ''
 
   const handleVerify = () => {
     if (evidenceId) verify.mutate(evidenceId)
@@ -125,24 +129,37 @@ export default function EvidenceViewer() {
             </TabsList>
 
             <TabsContent value="preview" className="mt-4">
-              <Card className="min-h-[450px] flex flex-col items-center justify-center p-8 text-center bg-card">
-                <FileText className="h-16 w-16 text-primary/40 mb-3" />
-                <h3 className="font-semibold text-base">{item.filename}</h3>
-                <p className="text-xs text-muted-foreground max-w-sm mt-1">
-                  Preview rendered for exhibit demonstration. Full text has been indexed and chunked for semantic vector queries.
-                </p>
-                <div className="mt-6 flex flex-wrap gap-2 justify-center">
-                  <Badge variant="secondary" className="font-mono text-xs">
-                    {formatBytes(item.size)}
-                  </Badge>
-                  <Badge variant="secondary" className="uppercase font-mono text-xs">
-                    {item.type}
-                  </Badge>
-                  {item.page_count && (
-                    <Badge variant="secondary" className="text-xs">
-                      {item.page_count} Pages
-                    </Badge>
-                  )}
+              <Card className="min-h-[450px] overflow-hidden bg-card">
+                {item.type === 'image' ? (
+                  <div className="flex min-h-[450px] items-center justify-center p-4">
+                    <img src={fileUrl} alt={item.original_filename} className="max-h-[70vh] max-w-full object-contain" />
+                  </div>
+                ) : item.type === 'audio' ? (
+                  <div className="flex min-h-[450px] flex-col items-center justify-center gap-6 p-8">
+                    <FileText className="h-16 w-16 text-primary/40" />
+                    <audio controls preload="metadata" src={fileUrl} className="w-full max-w-xl" />
+                  </div>
+                ) : item.type === 'video' ? (
+                  <div className="flex min-h-[450px] items-center justify-center bg-black p-2">
+                    <video controls preload="metadata" src={fileUrl} className="max-h-[70vh] max-w-full" />
+                  </div>
+                ) : ['pdf', 'document', 'email', 'chat'].includes(item.type) ? (
+                  <iframe
+                    title={`Preview of ${item.original_filename}`}
+                    src={fileUrl}
+                    className="h-[65vh] min-h-[450px] w-full border-0"
+                  />
+                ) : (
+                  <div className="flex min-h-[450px] flex-col items-center justify-center p-8 text-center">
+                    <FileText className="h-16 w-16 text-primary/40 mb-3" />
+                    <h3 className="font-semibold text-base">Preview unavailable for this file type</h3>
+                    <p className="mt-2 text-sm text-muted-foreground">{item.original_filename}</p>
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-2 border-t p-3">
+                  <Badge variant="secondary" className="font-mono text-xs">{formatBytes(item.size)}</Badge>
+                  <Badge variant="secondary" className="uppercase font-mono text-xs">{item.type}</Badge>
+                  {item.page_count && <Badge variant="secondary" className="text-xs">{item.page_count} Pages</Badge>}
                 </div>
               </Card>
             </TabsContent>
