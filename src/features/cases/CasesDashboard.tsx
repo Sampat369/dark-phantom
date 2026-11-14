@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import { useCases, useCreateCase, useUpdateCase, useDeleteCase } from '@/hooks/queries'
 import { useAppStore } from '@/app/store'
-import { formatRelative, formatDate, getStatusColor } from '@/lib/utils'
+import { formatDate, getStatusColor } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card'
@@ -192,6 +192,9 @@ export default function CasesDashboard() {
           </h1>
           <p className="text-sm text-muted-foreground">
             Cryptographically verified digital evidence management and forensic investigation registry.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Demo workspace as of 14/11/2026. Sample names and records are fictional; replace them with authorized matter data before operational use.
           </p>
         </div>
 
@@ -457,7 +460,7 @@ export default function CasesDashboard() {
               <CardFooter className="flex items-center justify-between border-t bg-muted/10 p-4">
                 <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
                   <Clock className="h-3.5 w-3.5" />
-                  <span>{formatRelative(c.updated_at)}</span>
+                  <span>Updated {formatDate(c.updated_at, 'dd/MM/yyyy')}</span>
                 </div>
                 <Button
                   size="sm"
@@ -527,7 +530,7 @@ export default function CasesDashboard() {
                     </Badge>
                   </td>
                   <td className="py-3.5 px-4 text-xs text-muted-foreground">
-                    {formatRelative(c.updated_at)}
+                    {formatDate(c.updated_at, 'dd/MM/yyyy')}
                   </td>
                   <td
                     className="py-3.5 px-4 text-right"

@@ -13,6 +13,7 @@ import {
   mockSearchResults,
   mockCustodyLog,
   mockChunks,
+  MOCK_NOW,
 } from './data'
 import type { Case, Citation, Evidence, Inconsistency } from '@/types'
 
@@ -164,8 +165,8 @@ export const handlers = [
       id: `case-${Date.now()}`,
       name: body.name ?? 'New Case',
       description: body.description ?? '',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      created_at: MOCK_NOW,
+      updated_at: MOCK_NOW,
       evidence_count: 0,
       processing_status: 'queued',
       tags: body.tags ?? [],
@@ -179,7 +180,7 @@ export const handlers = [
     const idx = mockCases.findIndex(c => c.id === params.id)
     if (idx === -1) return HttpResponse.json({ detail: 'Not found', status_code: 404 }, { status: 404 })
     const body = await request.json() as Partial<Case>
-    mockCases[idx] = { ...mockCases[idx], ...body, updated_at: new Date().toISOString() }
+    mockCases[idx] = { ...mockCases[idx], ...body, updated_at: MOCK_NOW }
     return HttpResponse.json(mockCases[idx])
   }),
 
@@ -214,6 +215,7 @@ export const handlers = [
         : ['eml', 'msg'].includes(extension) ? 'email'
         : ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'oga', 'flac'].includes(extension) ? 'audio'
         : ['mp4', 'mov', 'avi', 'mkv', 'webm', 'mpeg', 'mpg', '3gp'].includes(extension) ? 'video'
+        : extension === 'json' ? 'chat'
         : ['txt', 'doc', 'docx'].includes(extension) ? 'document'
         : 'other'
       const newEv = {
@@ -226,7 +228,7 @@ export const handlers = [
         sha256: '',
         integrity_status: 'unchecked' as const,
         processing_status: 'queued' as const,
-        upload_date: new Date().toISOString(),
+        upload_date: MOCK_NOW,
         processed_at: null,
         page_count: null,
         duration: null,
@@ -238,6 +240,11 @@ export const handlers = [
       mockEvidenceFiles.set(newEv.id, file)
       return newEv
     })
+    const parentCase = mockCases.find(c => c.id === params.caseId)
+    if (parentCase) {
+      parentCase.evidence_count += items.length
+      parentCase.updated_at = MOCK_NOW
+    }
     return HttpResponse.json({ items }, { status: 201 })
   }),
 
@@ -282,7 +289,7 @@ export const handlers = [
     await delay(1000)
     const ev = mockEvidence.find(e => e.id === params.id)
     if (!ev) return HttpResponse.json({ detail: 'Not found', status_code: 404 }, { status: 404 })
-    return HttpResponse.json({ evidence_id: params.id, integrity_status: ev.integrity_status, verified_at: new Date().toISOString() })
+    return HttpResponse.json({ evidence_id: params.id, integrity_status: ev.integrity_status, verified_at: MOCK_NOW })
   }),
 
   // ─── Timeline ─────────────────────────────────────────────────────────────
@@ -339,7 +346,7 @@ export const handlers = [
 
   http.post('/api/v1/cases/:caseId/summary', async () => {
     await delay(2000)
-    return HttpResponse.json({ ...mockSummary, generated_at: new Date().toISOString() }, { status: 201 })
+    return HttpResponse.json({ ...mockSummary, generated_at: MOCK_NOW }, { status: 201 })
   }),
 
   // ─── Search ───────────────────────────────────────────────────────────────

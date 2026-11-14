@@ -1,4 +1,6 @@
-export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === 'true'
+// Default to the bundled demo API when no environment setting is provided.
+// Set VITE_USE_MOCKS=false to connect to the real backend.
+export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS !== 'false'
 export const API_BASE_URL = USE_MOCKS
   ? '/api/v1'
   : import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
@@ -12,6 +14,8 @@ export const ACCEPTED_MIME_TYPES: Record<string, string[]> = {
   'application/msword': ['.doc'],
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
   'text/plain': ['.txt'],
+  'text/csv': ['.csv'],
+  'application/json': ['.json'],
   'message/rfc822': ['.eml'],
   'audio/*': ['.mp3', '.wav', '.m4a', '.ogg'],
   'video/*': ['.mp4', '.mov', '.avi'],
