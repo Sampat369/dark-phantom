@@ -4,7 +4,7 @@ export const API_BASE_URL = USE_MOCKS
   : import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
 export const POLLING_INTERVAL = 3000
 export const QUERY_STALE_TIME = 30_000
-export const MAX_FILE_SIZE = 100 * 1024 * 1024
+export const MAX_FILE_SIZE = 500 * 1024 * 1024
 
 export const ACCEPTED_MIME_TYPES: Record<string, string[]> = {
   'image/*': ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.tiff'],

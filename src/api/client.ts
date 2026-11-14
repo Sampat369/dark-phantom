@@ -1,6 +1,13 @@
 import { API_BASE_URL } from '@/lib/constants'
 import type { ApiError } from '@/types'
 
+function getErrorMessage(errorData: ApiError, status: number) {
+  const detail = errorData.detail
+  if (typeof detail === 'string') return detail
+  if (detail && typeof detail.detail === 'string') return detail.detail
+  return `Request failed with status ${status}`
+}
+
 class ApiClient {
   private baseUrl: string
 
@@ -25,14 +32,7 @@ class ApiClient {
       } catch {
         errorData = { detail: `HTTP ${response.status}: ${response.statusText}`, status_code: response.status }
       }
-      const detail = errorData.detail
-      const message =
-        typeof detail === 'string'
-          ? detail
-          : detail && typeof detail === 'object' && 'detail' in detail && typeof detail.detail === 'string'
-            ? detail.detail
-            : `Request failed with status ${response.status}`
-      throw new Error(message)
+      throw new Error(getErrorMessage(errorData, response.status))
     }
 
     if (response.status === 204) {
@@ -79,7 +79,7 @@ class ApiClient {
       } catch {
         errorData = { detail: `HTTP ${response.status}: ${response.statusText}`, status_code: response.status }
       }
-      throw new Error(errorData.detail || `Request failed with status ${response.status}`)
+      throw new Error(getErrorMessage(errorData, response.status))
     }
 
     if (response.status === 204) {

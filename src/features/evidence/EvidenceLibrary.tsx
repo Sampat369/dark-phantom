@@ -59,7 +59,7 @@ export default function EvidenceLibrary() {
             ref={fileInputRef}
             type="file"
             multiple
-            accept=".pdf,.txt,.csv,.json,.eml,.mbox,.msg,.docx,.png,.jpg,.jpeg,.mp3,.wav"
+            accept=".pdf,.txt,.csv,.json,.eml,.mbox,.msg,.docx,.png,.jpg,.jpeg,.gif,.webp,.tiff,.mp3,.wav,.m4a,.aac,.ogg,.flac,.mp4,.mov,.avi,.mkv,.webm,.mpeg,.mpg,.3gp,audio/*,video/*"
             className="hidden"
             onChange={handleFilesSelected}
           />

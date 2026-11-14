@@ -34,7 +34,10 @@ def _evidence_read(evidence: EvidenceFile) -> dict:
     evidence_type = {
         ".pdf": "pdf", ".png": "image", ".jpg": "image", ".jpeg": "image",
         ".gif": "image", ".webp": "image", ".eml": "email", ".msg": "email",
-        ".mp3": "audio", ".wav": "audio", ".mp4": "video", ".mov": "video",
+        ".mp3": "audio", ".wav": "audio", ".m4a": "audio", ".aac": "audio",
+        ".ogg": "audio", ".oga": "audio", ".flac": "audio",
+        ".mp4": "video", ".mov": "video", ".avi": "video", ".mkv": "video",
+        ".webm": "video", ".mpeg": "video", ".mpg": "video", ".3gp": "video",
         ".csv": "document", ".json": "chat", ".txt": "document", ".docx": "document",
     }.get(extension, "other")
     return {
@@ -212,6 +215,16 @@ async def chat(case_id:str,body:QuestionRequest,db:AsyncSession=Depends(get_db))
     if not case:
         raise HTTPException(404, "Case not found")
     chunks = await _retrieve_chunks(case_id, body, db)
+    evidence_files = (await db.execute(
+        select(EvidenceFile)
+        .where(EvidenceFile.case_id == case_id)
+        .order_by(EvidenceFile.uploaded_at.desc())
+    )).scalars().all()
+    media_files = [
+        evidence for evidence in evidence_files
+        if (not body.evidence_ids or evidence.id in body.evidence_ids)
+        and _evidence_read(evidence)["type"] in {"audio", "video"}
+    ]
     references = []
     context_parts = []
     for index, (chunk, evidence) in enumerate(chunks, start=1):
@@ -227,14 +240,39 @@ async def chat(case_id:str,body:QuestionRequest,db:AsyncSession=Depends(get_db))
         location = f", page {chunk.page}" if chunk.page else ""
         context_parts.append(f"[{index}] {evidence.original_filename}{location} (source chunk {chunk.id}):\n{chunk.text}")
 
+    for evidence in media_files:
+        index = len(references) + 1
+        media_type = _evidence_read(evidence)["type"]
+        media_label = "video" if media_type == "video" else "audio"
+        limitation = (
+            "The file is uploaded, but its frames and soundtrack have not been analyzed."
+            if media_type == "video"
+            else "The file is uploaded, but its audio has not been transcribed."
+        )
+        references.append({
+            "number": index,
+            "evidence_id": evidence.id,
+            "evidence_filename": evidence.original_filename,
+            "snippet": f"Uploaded {media_label} evidence. {limitation}",
+            "page": None,
+            "timestamp": None,
+            "chunk_id": f"media-{evidence.id}",
+        })
+        context_parts.append(
+            f"[{index}] Uploaded {media_label} file: {evidence.original_filename}. "
+            f"This record confirms the file is present; {limitation}"
+        )
+
     system_prompt = (
         "You are EvidenceIQ, a conversational assistant that analyzes the user's uploaded case evidence. "
         "Respond naturally to greetings and informal questions. For factual answers about the case, use only the evidence excerpts supplied below; "
         "never invent facts or imply that you read material that is not present. Cite supporting excerpts inline as [1], [2], etc. "
         "If the excerpts do not answer the question, say what is missing. Distinguish recorded facts from inferences, and keep legal conclusions for human reviewers. "
+        "An uploaded media record confirms that a file exists, but it does not reveal what the audio or video contains. "
+        "Do not say that an uploaded media file is missing when it appears in the media records. Explain that its audio has not been transcribed or its video frames and soundtrack have not been analyzed, and do not guess at its contents. "
         "When asked to summarize a named file, summarize only excerpts from that file and state when the indexed excerpts are incomplete."
     )
-    context = "\n\n".join(context_parts) if context_parts else "No evidence excerpts were retrieved for this question."
+    context = "\n\n".join(context_parts) if context_parts else "No evidence excerpts or uploaded media records were found for this case."
     messages = [{"role": "system", "content": f"{system_prompt}\n\nEvidence excerpts:\n{context}"}]
     messages.extend(
         {"role": item["role"], "content": item["content"]}

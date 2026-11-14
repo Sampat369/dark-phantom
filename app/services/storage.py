@@ -2,11 +2,12 @@ import hashlib, os, re, uuid
 from pathlib import Path
 from fastapi import UploadFile, HTTPException
 from app.core.config import settings
-ALLOWED={"application/pdf","text/plain","text/csv","application/json","message/rfc822","application/vnd.openxmlformats-officedocument.wordprocessingml.document","audio/mpeg","audio/wav","image/png","image/jpeg"}
+ALLOWED={"application/pdf","text/plain","text/csv","application/json","message/rfc822","application/vnd.openxmlformats-officedocument.wordprocessingml.document","audio/mpeg","audio/wav","audio/mp4","audio/aac","audio/ogg","audio/flac","video/mp4","video/quicktime","video/x-msvideo","video/x-matroska","video/webm","video/mpeg","image/png","image/jpeg","image/gif","image/webp","image/tiff"}
+ALLOWED_EXTENSIONS={".eml",".mbox",".msg",".docx",".pdf",".txt",".json",".csv",".png",".jpg",".jpeg",".gif",".webp",".tif",".tiff",".mp3",".wav",".m4a",".aac",".ogg",".oga",".flac",".mp4",".mov",".avi",".mkv",".webm",".mpeg",".mpg",".3gp"}
 def safe_name(name): return re.sub(r"[^A-Za-z0-9._-]", "_", Path(name or "upload").name)[:180]
 async def save_upload(upload: UploadFile, case_id: str):
     ext=Path(upload.filename or "").suffix.lower(); mime=(upload.content_type or "application/octet-stream").lower()
-    if mime not in ALLOWED and ext not in {".eml",".mbox",".msg",".docx",".pdf",".txt",".json",".csv",".png",".jpg",".jpeg",".mp3",".wav"}: raise HTTPException(415,"Disallowed evidence type")
+    if mime not in ALLOWED and ext not in ALLOWED_EXTENSIONS: raise HTTPException(415,"Disallowed evidence type")
     root=Path(settings.storage_root).resolve()/case_id; root.mkdir(parents=True,exist_ok=True); path=root/(str(uuid.uuid4())+"_"+safe_name(upload.filename)); sha=hashlib.sha256(); md5=hashlib.md5(); size=0
     with path.open("wb") as f:
         while chunk:=await upload.read(1024*1024):

@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   Lightbulb,
   RefreshCw,
+  Download,
 } from 'lucide-react'
 import { useSummary, useGenerateSummary } from '@/hooks/queries'
 import { formatDate } from '@/lib/utils'
@@ -30,6 +31,15 @@ export default function SummaryView() {
   }
   const hasSummary = !!summary && typeof summary.executive_summary === 'string'
 
+  const handleDownloadPdf = () => {
+    const previousTitle = document.title
+    document.title = `case-summary-${currentCaseId}`
+    window.addEventListener('afterprint', () => {
+      document.title = previousTitle
+    }, { once: true })
+    window.print()
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -44,7 +54,13 @@ export default function SummaryView() {
           </p>
         </div>
 
-        <div className="flex flex-col items-start gap-2 sm:items-end">
+        <div className="summary-actions flex flex-col items-start gap-2 sm:items-end">
+          {hasSummary && (
+            <Button onClick={handleDownloadPdf} variant="outline" className="gap-2">
+              <Download className="h-4 w-4" />
+              Download PDF
+            </Button>
+          )}
           <Button
             onClick={handleGenerate}
             disabled={generateSummary.isPending}
@@ -75,7 +91,7 @@ export default function SummaryView() {
           {summary ? 'The saved summary is incomplete. Click “Regenerate Brief” to rebuild it.' : 'No summary brief generated for this case yet. Click “Regenerate Brief” to create one.'}
         </div>
       ) : (
-        <div className="space-y-6">
+        <div id="summary-report" className="space-y-6">
           {/* Executive Summary */}
           <Card className="border-primary/30 bg-primary/5">
             <CardHeader className="pb-2">

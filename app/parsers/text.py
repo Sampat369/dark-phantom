@@ -3,6 +3,10 @@ from zipfile import ZipFile
 from xml.etree import ElementTree
 def extract(path: str, mime: str):
     p=Path(path); ext=p.suffix.lower()
+    # Preserve audio and video as playable evidence without trying to decode
+    # binary media as UTF-8 text. Transcription can be added as a separate step.
+    if ext in {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".oga", ".flac", ".mp4", ".mov", ".avi", ".mkv", ".webm", ".mpeg", ".mpg", ".3gp"}:
+        return []
     if ext==".pdf":
         from pypdf import PdfReader
         return [(page.extract_text() or "", {"page":i+1}) for i,page in enumerate(PdfReader(p).pages)]

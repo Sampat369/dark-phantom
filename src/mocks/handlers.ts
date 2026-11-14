@@ -212,8 +212,8 @@ export const handlers = [
       const type: Evidence['type'] = extension === 'pdf' ? 'pdf'
         : ['jpg', 'jpeg', 'png', 'gif', 'webp', 'tiff'].includes(extension) ? 'image'
         : ['eml', 'msg'].includes(extension) ? 'email'
-        : ['mp3', 'wav', 'm4a', 'ogg'].includes(extension) ? 'audio'
-        : ['mp4', 'mov', 'avi'].includes(extension) ? 'video'
+        : ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'oga', 'flac'].includes(extension) ? 'audio'
+        : ['mp4', 'mov', 'avi', 'mkv', 'webm', 'mpeg', 'mpg', '3gp'].includes(extension) ? 'video'
         : ['txt', 'doc', 'docx'].includes(extension) ? 'document'
         : 'other'
       const newEv = {

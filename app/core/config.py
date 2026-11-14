@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     chat_model: str = "llama3.2:3b"
     embed_model: str = "bge-large:latest"
-    max_upload_bytes: int = 50 * 1024 * 1024
+    max_upload_bytes: int = 500 * 1024 * 1024
     api_key: str = ""
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
