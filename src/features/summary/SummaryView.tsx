@@ -44,14 +44,21 @@ export default function SummaryView() {
           </p>
         </div>
 
-        <Button
-          onClick={handleGenerate}
-          disabled={generateSummary.isPending}
-          className="gap-2"
-        >
-          <RefreshCw className={`h-4 w-4 ${generateSummary.isPending ? 'animate-spin' : ''}`} />
-          {generateSummary.isPending ? 'Synthesizing...' : 'Regenerate Brief'}
-        </Button>
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <Button
+            onClick={handleGenerate}
+            disabled={generateSummary.isPending}
+            className="gap-2"
+          >
+            <RefreshCw className={`h-4 w-4 ${generateSummary.isPending ? 'animate-spin' : ''}`} />
+            {generateSummary.isPending ? 'Analyzing evidence...' : 'Regenerate Brief'}
+          </Button>
+          {generateSummary.isPending && (
+            <p role="status" className="text-xs text-muted-foreground">
+              The local AI is reviewing the uploaded files. This can take up to two minutes.
+            </p>
+          )}
+        </div>
       </div>
 
       {isLoading ? (

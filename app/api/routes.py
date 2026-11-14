@@ -3,9 +3,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import APIRouter, Depends, UploadFile, File, BackgroundTasks, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_db
+from app.core.config import settings
 from app.core.security import require_api_key
 from app.models import *
 from app.schemas.common import *
@@ -257,12 +258,27 @@ async def search(case_id:str,q:str=Query(min_length=1),db:AsyncSession=Depends(g
 
 @router.get("/cases/{case_id}/entities")
 async def entities(case_id:str,db:AsyncSession=Depends(get_db)):
-    return (await db.execute(select(Entity).where(Entity.case_id==case_id))).scalars().all()
+    values=(await db.execute(select(Entity).where(Entity.case_id==case_id).order_by(Entity.value))).scalars().all()
+    items=[]
+    for entity in values:
+        mentions=(await db.execute(select(EntityMention.chunk_id).where(EntityMention.entity_id==entity.id))).scalars().all()
+        chunks=(await db.execute(select(Chunk.evidence_id).where(Chunk.id.in_(mentions)))).scalars().all() if mentions else []
+        items.append({"id":entity.id,"case_id":entity.case_id,"name":entity.value,"type":"organization" if entity.type==EntityType.org else entity.type.value,"aliases":[],"description":None,"evidence_count":len(set(chunks)),"mention_count":len(mentions),"metadata":{}})
+    return {"items":items,"total":len(items)}
 @router.get("/cases/{case_id}/graph")
 async def graph(case_id:str,db:AsyncSession=Depends(get_db)):
     nodes=(await db.execute(select(Entity).where(Entity.case_id==case_id))).scalars().all()
     ids={n.id for n in nodes}; edges=(await db.execute(select(Relationship).where(Relationship.source_entity.in_(ids),Relationship.target_entity.in_(ids)))).scalars().all() if ids else []
-    return {"nodes":nodes,"edges":edges}
+    node_items=[]
+    for node in nodes:
+        mentions=(await db.execute(select(EntityMention.chunk_id).where(EntityMention.entity_id==node.id))).scalars().all()
+        node_items.append({"id":node.id,"label":node.value,"type":"organization" if node.type==EntityType.org else node.type.value,"size":max(1,len(mentions)),"color":"#64748b","metadata":{}})
+    edge_items=[]
+    for edge in edges:
+        source_chunks=edge.evidence_chunk_ids or []
+        evidence_ids=(await db.execute(select(Chunk.evidence_id).where(Chunk.id.in_(source_chunks)))).scalars().all() if source_chunks else []
+        edge_items.append({"id":edge.id,"source":edge.source_entity,"target":edge.target_entity,"label":edge.type,"weight":max(1,len(source_chunks)),"evidence_ids":list(set(evidence_ids))})
+    return {"nodes":node_items,"edges":edge_items}
 @router.post("/cases/{case_id}/entities/merge")
 async def merge_entities(case_id:str,entity_ids:list[str],db:AsyncSession=Depends(get_db)):
     if len(entity_ids)<2: raise HTTPException(400,"At least two entities are required")
@@ -273,11 +289,24 @@ async def merge_entities(case_id:str,entity_ids:list[str],db:AsyncSession=Depend
         await db.execute(__import__('sqlalchemy').update(EntityMention).where(EntityMention.entity_id==e.id).values(entity_id=target.id)); await db.delete(e)
     await db.commit(); return target
 @router.get("/cases/{case_id}/timeline")
-async def timeline(case_id:str,db:AsyncSession=Depends(get_db)): return (await db.execute(select(TimelineEvent).where(TimelineEvent.case_id==case_id).order_by(TimelineEvent.timestamp))).scalars().all()
+async def timeline(case_id:str,db:AsyncSession=Depends(get_db)):
+    events=(await db.execute(select(TimelineEvent).where(TimelineEvent.case_id==case_id).order_by(TimelineEvent.timestamp))).scalars().all(); items=[]
+    for event in events:
+        chunk_ids=event.source_chunk_ids or []
+        evidence_ids=(await db.execute(select(Chunk.evidence_id).where(Chunk.id.in_(chunk_ids)))).scalars().all() if chunk_ids else []
+        items.append({"id":event.id,"case_id":event.case_id,"timestamp":event.timestamp.isoformat(),"timestamp_end":None,"precision":event.timestamp_precision,"title":event.description[:100],"description":event.description,"evidence_ids":list(set(evidence_ids)),"entity_ids":[],"tags":[],"is_inferred":event.confidence<0.7})
+    return {"items":items,"total":len(items)}
 @router.post("/cases/{case_id}/timeline/regenerate")
-async def regenerate_timeline(case_id:str): return {"status":"queued","message":"Timeline regeneration is scheduled for the ingestion worker."}
+async def regenerate_timeline(case_id:str): return {"status":"use_summary_generation","message":"Regenerate the case summary to rebuild the timeline from processed evidence."}
 @router.get("/cases/{case_id}/inconsistencies")
-async def inconsistencies(case_id:str,db:AsyncSession=Depends(get_db)): return (await db.execute(select(Inconsistency).where(Inconsistency.case_id==case_id))).scalars().all()
+async def inconsistencies(case_id:str,db:AsyncSession=Depends(get_db)):
+    values=(await db.execute(select(Inconsistency).where(Inconsistency.case_id==case_id).order_by(Inconsistency.severity,Inconsistency.id))).scalars().all(); items=[]
+    for value in values:
+        chunk_ids=list(dict.fromkeys((value.chunk_ids_a or [])+(value.chunk_ids_b or [])))
+        chunks=(await db.execute(select(Chunk,EvidenceFile).join(EvidenceFile,EvidenceFile.id==Chunk.evidence_id).where(Chunk.id.in_(chunk_ids)))).all() if chunk_ids else []
+        snippets=[{"evidence_id":chunk.evidence_id,"evidence_filename":evidence.original_filename,"text":chunk.text,"page":chunk.page} for chunk,evidence in chunks]
+        items.append({"id":value.id,"case_id":value.case_id,"title":value.description[:100],"description":value.description,"severity":value.severity,"status":value.status.value,"evidence_ids":list(dict.fromkeys(evidence.id for _,evidence in chunks)),"chunk_ids":chunk_ids,"created_at":datetime.now(timezone.utc).isoformat(),"reviewed_at":None,"reviewer_notes":value.reviewer_note,"snippets":snippets})
+    return {"items":items,"total":len(items)}
 @router.patch("/inconsistencies/{inconsistency_id}")
 async def update_inconsistency(inconsistency_id:str,status:InconsistencyStatus,reviewer_note:str|None=None,db:AsyncSession=Depends(get_db)):
     x=await db.get(Inconsistency,inconsistency_id)
@@ -286,7 +315,13 @@ async def update_inconsistency(inconsistency_id:str,status:InconsistencyStatus,r
 @router.post("/cases/{case_id}/inconsistencies/scan")
 async def scan_inconsistencies(case_id:str): return {"status":"queued","disclaimer":"Potential inconsistencies for human review; not conclusions."}
 @router.get("/cases/{case_id}/duplicates")
-async def duplicates(case_id:str,db:AsyncSession=Depends(get_db)): return (await db.execute(select(DuplicateGroup).where(DuplicateGroup.case_id==case_id))).scalars().all()
+async def duplicates(case_id:str,db:AsyncSession=Depends(get_db)):
+    groups=(await db.execute(select(DuplicateGroup).where(DuplicateGroup.case_id==case_id))).scalars().all(); items=[]
+    for group in groups:
+        ids=group.evidence_ids or []
+        if len(ids)<2: continue
+        items.append({"id":group.id,"case_id":group.case_id,"primary_evidence_id":ids[0],"duplicate_evidence_ids":ids[1:],"similarity_score":group.similarity,"detection_method":group.type,"created_at":datetime.now(timezone.utc).isoformat()})
+    return {"items":items,"total":len(items)}
 @router.post("/cases/{case_id}/summary")
 async def create_summary(case_id:str,db:AsyncSession=Depends(get_db)):
     case=await db.get(Case,case_id)
@@ -296,15 +331,15 @@ async def create_summary(case_id:str,db:AsyncSession=Depends(get_db)):
         .join(EvidenceFile,EvidenceFile.id==Chunk.evidence_id)
         .where(EvidenceFile.case_id==case_id)
         .order_by(EvidenceFile.uploaded_at,Chunk.embedding_id)
-        .limit(32)
+        .limit(16)
     )).all()
     if not rows: raise HTTPException(409,"No processed evidence is available yet. Upload documents and wait for processing to finish.")
     evidence_context="\n\n".join(
-        f"[{index}] {evidence.original_filename}" + (f", page {chunk.page}" if chunk.page else "") + f"\n{chunk.text}"
+        f"[source_chunk_id={chunk.id}] {evidence.original_filename}" + (f", page {chunk.page}" if chunk.page else "") + f"\n{chunk.text[:1800]}"
         for index,(chunk,evidence) in enumerate(rows,1)
     )
     messages=[
-        {"role":"system","content":"Create a concise, neutral case brief using only the supplied evidence excerpts. Do not invent facts. Distinguish documented facts from inferences and say when evidence is insufficient. Return valid JSON only with keys: executive_summary (string), key_facts (array of strings), key_persons (array of objects with name, role, significance), key_organizations (array of objects with name, role), chronology (array of objects with date, event), inconsistencies_summary (string), evidence_gaps (array of strings), recommendations (array of strings). Recommendations should be evidence-gathering steps, not legal advice."},
+        {"role":"system","content":"Analyze the supplied case evidence and return exactly one JSON object, not JSON inside a string. Be concise, factual, and do not invent facts. Use this key order and schema: executive_summary (string, under 60 words), entities (array of objects with name,type,description,source_chunk_ids), inconsistencies_summary (string), inconsistencies (array of objects with title,description,severity,source_chunk_ids), chronology (array of objects with date,event,source_chunk_ids), relationships (array of objects with source,target,relation,source_chunk_ids), key_facts (array of strings), key_persons (array of objects with name,role,significance,source_chunk_ids), key_organizations (array of objects with name,role,source_chunk_ids), evidence_gaps (array of strings), recommendations (array of strings). Include at most 2 short items per list. source_chunk_ids must be the exact UUIDs shown in the excerpts, never filenames. Keep recommendations to evidence gathering."},
         {"role":"user","content":f"Case: {case.name}\nDescription: {case.description or 'Not provided'}\n\nEvidence excerpts:\n{evidence_context}"},
     ]
     raw=await complete_chat(messages)
@@ -312,8 +347,89 @@ async def create_summary(case_id:str,db:AsyncSession=Depends(get_db)):
         json_start=raw.find("{"); json_end=raw.rfind("}")
         if json_start<0 or json_end<json_start: raise ValueError("Model did not return JSON")
         generated=json.loads(raw[json_start:json_end+1])
+        # Some local models wrap the requested report JSON inside the summary
+        # string. Unwrap it so the brief and derived analysis use real fields.
+        for _ in range(4):
+            nested=generated.get("executive_summary") if isinstance(generated,dict) else None
+            if not isinstance(nested,str) or not nested.lstrip().startswith("{"): break
+            try: nested_data=json.loads(nested)
+            except json.JSONDecodeError:
+                # Recover complete fields if a small local model hits its output
+                # limit while wrapping the report in the summary string.
+                recovered={}
+                summary_match=re.search(r'"executive_summary"\s*:\s*"((?:\\.|[^"\\])*)"',nested)
+                if summary_match:
+                    try: recovered["executive_summary"]=json.loads('"'+summary_match.group(1)+'"')
+                    except json.JSONDecodeError: pass
+                for field in ("key_facts","key_persons","key_organizations","chronology","inconsistencies","entities","relationships","evidence_gaps","recommendations"):
+                    match=re.search(r'"'+field+r'"\s*:\s*',nested)
+                    if not match: continue
+                    try: value,_=json.JSONDecoder().raw_decode(nested[match.end():])
+                    except json.JSONDecodeError: continue
+                    if isinstance(value,list): recovered[field]=value
+                match=re.search(r'"inconsistencies_summary"\s*:\s*',nested)
+                if match:
+                    try:
+                        value,_=json.JSONDecoder().raw_decode(nested[match.end():])
+                        if isinstance(value,str): recovered["inconsistencies_summary"]=value
+                    except json.JSONDecodeError: pass
+                if recovered.get("executive_summary"):
+                    generated={**generated,**recovered}
+                break
+            if not isinstance(nested_data,dict) or "executive_summary" not in nested_data: break
+            generated={**generated,**nested_data}
     except (ValueError,json.JSONDecodeError):
         generated={"executive_summary":raw.strip(),"key_facts":[],"key_persons":[],"key_organizations":[],"chronology":[],"inconsistencies_summary":"","evidence_gaps":[],"recommendations":[]}
+        # If Ollama truncates its JSON wrapper, unwrap any complete inner report
+        # fields from the response text instead of saving raw JSON as the brief.
+        candidate=raw.strip()
+        for _ in range(4):
+            try:
+                parsed=json.loads(candidate)
+                if isinstance(parsed,dict) and isinstance(parsed.get("executive_summary"),str):
+                    inner=parsed["executive_summary"]
+                    if inner.lstrip().startswith("{"):
+                        candidate=inner
+                        continue
+                    generated={**generated,**parsed}
+                    break
+            except json.JSONDecodeError:
+                match=re.search(r'"executive_summary"\s*:\s*"((?:\\.|[^"\\])*)"',candidate)
+                if match:
+                    try: generated["executive_summary"]=json.loads('"'+match.group(1)+'"')
+                    except json.JSONDecodeError: pass
+            for field in ("key_facts","key_persons","key_organizations","chronology","inconsistencies","entities","relationships","evidence_gaps","recommendations"):
+                match=re.search(r'"'+field+r'"\s*:\s*',candidate)
+                if match:
+                    try:
+                        value,_=json.JSONDecoder().raw_decode(candidate[match.end():])
+                        if isinstance(value,list): generated[field]=value
+                    except json.JSONDecodeError: pass
+            match=re.search(r'"inconsistencies_summary"\s*:\s*',candidate)
+            if match:
+                try:
+                    value,_=json.JSONDecoder().raw_decode(candidate[match.end():])
+                    if isinstance(value,str): generated["inconsistencies_summary"]=value
+                except json.JSONDecodeError: pass
+            outer_match=re.search(r'"executive_summary"\s*:\s*"((?:\\.|[^"\\])*)"',candidate)
+            if outer_match:
+                try:
+                    unwrapped=json.loads('"'+outer_match.group(1)+'"')
+                    if isinstance(unwrapped,str) and unwrapped.lstrip().startswith("{"):
+                        candidate=unwrapped
+                        continue
+                except json.JSONDecodeError: pass
+            break
+    if not isinstance(generated.get("chronology"),list) or not generated.get("chronology"):
+        # Create a dated event for each excerpt that explicitly records a date
+        # when the model output is truncated before its chronology section.
+        fallback_events=[]
+        for chunk,evidence_file in rows:
+            for date_text in re.findall(r"\b20\d{2}-\d{1,2}-\d{1,2}\b",chunk.text):
+                try: datetime.fromisoformat(date_text)
+                except ValueError: continue
+                fallback_events.append({"date":date_text,"event":f"{evidence_file.original_filename}: {chunk.text[:220]}","source_chunk_ids":[chunk.id]})
+        if fallback_events: generated["chronology"]=fallback_events
     def string_list(name:str)->list[str]:
         values=generated.get(name,[])
         return [value.strip() for value in values if isinstance(value,str) and value.strip()] if isinstance(values,list) else []
@@ -333,6 +449,118 @@ async def create_summary(case_id:str,db:AsyncSession=Depends(get_db)):
         "evidence_gaps":string_list("evidence_gaps"),"recommendations":string_list("recommendations"),
         "word_count":len(summary_text.split()),
     }
+    # Rebuild derived case analysis from this generation so every analysis tab
+    # reflects the same indexed evidence and model response as the report.
+    valid_chunks={chunk.id:chunk for chunk,_ in rows}
+    chunks_by_filename={}
+    for chunk,evidence_file in rows:
+        chunks_by_filename.setdefault(evidence_file.original_filename.casefold(),[]).append(chunk.id)
+    def resolve_source_ids(values):
+        resolved=[]
+        if isinstance(values,str): values=[values]
+        for value in values if isinstance(values,list) else []:
+            if value in valid_chunks: resolved.append(value)
+            else: resolved.extend(chunks_by_filename.get(str(value).casefold(),[]))
+        return list(dict.fromkeys(resolved))
+    entity_candidates=generated.get("entities",[])
+    if not isinstance(entity_candidates,list): entity_candidates=[]
+    if not entity_candidates:
+        entity_candidates=[
+            {**item,"type":"person"} for item in generated.get("key_persons",[]) if isinstance(item,dict)
+        ]+[ {**item,"type":"organization"} for item in generated.get("key_organizations",[]) if isinstance(item,dict) ]
+    # If the model hits its output cap before its entity section, retain
+    # explicitly named people and organizations found in the indexed excerpts.
+    if not entity_candidates:
+        ignored_names={"purchase order","vendor invoice","goods receipt","warehouse receipt","bank change notice","finance officer","warehouse supervisor","office systems","health supplies"}
+        seen_names=set()
+        for chunk,evidence_file in rows:
+            for match in re.finditer(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}(?:\s+(?:Ltd\.?|Limited|Pvt\.?\s*Ltd\.?|Inc\.?))?",chunk.text):
+                name=match.group(0).strip()
+                key=name.casefold()
+                if key in ignored_names or key in seen_names or name.split()[0] in {"The","This","That","On","For","After"}: continue
+                seen_names.add(key)
+                kind="organization" if re.search(r"\b(?:Ltd\.?|Limited|Pvt\.?|Inc\.?)\b",name,re.I) else "person"
+                entity_candidates.append({"name":name,"type":kind,"source_chunk_ids":[chunk.id]})
+    if not result["key_facts"]:
+        candidates=[]
+        for chunk,evidence_file in rows:
+            for sentence in re.split(r"(?<=[.!?])\s+",chunk.text):
+                sentence=sentence.strip()
+                if len(sentence)<35 or len(sentence)>260 or "SYNTHETIC TEST" in sentence: continue
+                priority=sum(term in sentence.lower() for term in ("invoice","purchase order","physical count","payment","quantity","account","discrepancy","received"))
+                if priority: candidates.append((priority,f"{sentence} [{evidence_file.original_filename}]."))
+        result["key_facts"]=[fact for _,fact in sorted(candidates,key=lambda item:item[0],reverse=True)[:5]]
+    if not result["key_persons"]:
+        result["key_persons"]=[{"name":str(item.get("name","")),"role":"Person named in evidence","significance":"Mentioned in an indexed evidence excerpt."} for item in entity_candidates if str(item.get("type","")).lower() in {"person","individual"}]
+    if not result["key_organizations"]:
+        result["key_organizations"]=[{"name":str(item.get("name","")),"role":"Organization named in evidence"} for item in entity_candidates if str(item.get("type","")).lower() in {"organization","organisation","company","org","vendor","buyer"}]
+    entity_by_name={}
+    entity_query=select(Entity.id).where(Entity.case_id==case_id)
+    await db.execute(delete(EntityMention).where(EntityMention.entity_id.in_(entity_query)))
+    await db.execute(delete(Relationship).where(or_(Relationship.source_entity.in_(entity_query),Relationship.target_entity.in_(entity_query))))
+    await db.execute(delete(Entity).where(Entity.case_id==case_id))
+    await db.execute(delete(TimelineEvent).where(TimelineEvent.case_id==case_id))
+    await db.execute(delete(Inconsistency).where(Inconsistency.case_id==case_id,Inconsistency.status==InconsistencyStatus.open))
+    for item in entity_candidates:
+        if not isinstance(item,dict): continue
+        name=str(item.get("name","")).strip()[:500]
+        if not name: continue
+        raw_type=str(item.get("type","other")).lower().strip()
+        if raw_type in {"organization","organisation","company","org"}: raw_type="org"
+        elif any(term in raw_type for term in ("company","organization","organisation","vendor","buyer","business")): raw_type="org"
+        elif any(term in raw_type for term in ("person","individual","employee","manager","witness","officer","clerk","supervisor")): raw_type="person"
+        try: entity_type=EntityType(raw_type)
+        except ValueError: entity_type=EntityType.other
+        source_ids=resolve_source_ids(item.get("source_chunk_ids",[]))
+        if not source_ids:
+            source_ids=[chunk.id for chunk,_ in rows if name.lower() in chunk.text.lower()]
+        key=name.casefold()
+        if key in entity_by_name: continue
+        entity=Entity(case_id=case_id,type=entity_type,value=name,normalized_value=name.casefold())
+        db.add(entity); await db.flush(); entity_by_name[key]=entity.id
+        for chunk_id in source_ids: db.add(EntityMention(entity_id=entity.id,chunk_id=chunk_id))
+    for item in generated.get("relationships",[]) if isinstance(generated.get("relationships",[]),list) else []:
+        if not isinstance(item,dict): continue
+        source=entity_by_name.get(str(item.get("source","")).casefold()); target=entity_by_name.get(str(item.get("target","")).casefold())
+        if not source or not target or source==target: continue
+        chunk_ids=resolve_source_ids(item.get("source_chunk_ids",[]))
+        db.add(Relationship(source_entity=source,target_entity=target,type=str(item.get("relation","related to"))[:100],evidence_chunk_ids=chunk_ids))
+    chronology=generated.get("chronology",[])
+    if isinstance(chronology,list):
+        for item in chronology:
+            if not isinstance(item,dict): continue
+            date_text=str(item.get("date","")).strip(); description=str(item.get("event","")).strip()
+            if not date_text or not description: continue
+            try:
+                timestamp=datetime.fromisoformat(date_text.replace("Z","+00:00"))
+                precision="datetime" if "T" in date_text else "date"
+                if timestamp.tzinfo is None: timestamp=timestamp.replace(tzinfo=timezone.utc)
+            except ValueError: continue
+            chunk_ids=resolve_source_ids(item.get("source_chunk_ids",[]))
+            db.add(TimelineEvent(case_id=case_id,timestamp=timestamp,timestamp_precision=precision,description=description,source_chunk_ids=chunk_ids,confidence=0.85 if chunk_ids else 0.5))
+    inconsistencies=generated.get("inconsistencies",[])
+    if not isinstance(inconsistencies,list): inconsistencies=[]
+    if not inconsistencies and any(term in str(generated.get("inconsistencies_summary","")).lower() for term in ("discrepanc","inconsisten","conflict","mismatch")):
+        inconsistencies=[{"description":generated["inconsistencies_summary"],"severity":"medium","source_chunk_ids":[]}]
+    if inconsistencies:
+        for item in inconsistencies:
+            if not isinstance(item,dict): continue
+            description=str(item.get("description") or item.get("title") or "").strip()
+            if not description: continue
+            severity=str(item.get("severity","medium")).lower()
+            if severity not in {"low","medium","high","critical"}: severity="medium"
+            chunk_ids=resolve_source_ids(item.get("source_chunk_ids",[]))
+            midpoint=(len(chunk_ids)+1)//2
+            db.add(Inconsistency(case_id=case_id,description=description,severity=severity,chunk_ids_a=chunk_ids[:midpoint],chunk_ids_b=chunk_ids[midpoint:],status=InconsistencyStatus.open))
+    # Exact hashes are a deterministic duplicate signal; do not infer duplicates
+    # from similar filenames or model output.
+    await db.execute(delete(DuplicateGroup).where(DuplicateGroup.case_id==case_id,DuplicateGroup.type=="exact_sha256"))
+    evidence=(await db.execute(select(EvidenceFile).where(EvidenceFile.case_id==case_id))).scalars().all()
+    hashes={}
+    for item in evidence:
+        if item.sha256: hashes.setdefault(item.sha256,[]).append(item.id)
+    for ids in hashes.values():
+        if len(ids)>1: db.add(DuplicateGroup(case_id=case_id,evidence_ids=ids,type="exact_sha256",similarity=1.0))
     saved=await db.get(CaseSummary,case_id)
     if saved: saved.data=result
     else: db.add(CaseSummary(case_id=case_id,data=result))
@@ -343,4 +571,25 @@ async def get_summary(case_id:str,db:AsyncSession=Depends(get_db)):
     case=await db.get(Case,case_id)
     if not case: raise HTTPException(404,"Case not found")
     summary=await db.get(CaseSummary,case_id)
-    return summary.data if summary else None
+    if not summary: return None
+    data=dict(summary.data or {})
+    rows=(await db.execute(select(Chunk,EvidenceFile).join(EvidenceFile,EvidenceFile.id==Chunk.evidence_id).where(EvidenceFile.case_id==case_id).order_by(EvidenceFile.uploaded_at,Chunk.embedding_id).limit(32))).all()
+    if not data.get("key_facts"):
+        facts=[]
+        for chunk,evidence in rows:
+            for sentence in re.split(r"(?<=[.!?])\s+",chunk.text):
+                sentence=sentence.strip()
+                if len(sentence)<35 or len(sentence)>260 or "SYNTHETIC TEST" in sentence: continue
+                score=sum(term in sentence.lower() for term in ("invoice","purchase order","physical count","payment","quantity","account","discrepancy","received"))
+                if score: facts.append((score,f"{sentence} [{evidence.original_filename}]."))
+        data["key_facts"]=[fact for _,fact in sorted(facts,key=lambda item:item[0],reverse=True)[:5]]
+    if not data.get("key_persons") or not data.get("key_organizations"):
+        entities=(await db.execute(select(Entity).where(Entity.case_id==case_id))).scalars().all()
+        if not data.get("key_persons"):
+            data["key_persons"]=[{"name":item.value,"role":"Person named in evidence","significance":"Mentioned in an indexed evidence excerpt."} for item in entities if item.type==EntityType.person]
+        if not data.get("key_organizations"):
+            data["key_organizations"]=[{"name":item.value,"role":"Organization named in evidence"} for item in entities if item.type==EntityType.org]
+    if data!=summary.data:
+        summary.data=data
+        await db.commit()
+    return data

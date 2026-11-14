@@ -203,7 +203,11 @@ export function useGenerateSummary() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (caseId: string) => summaryApi.generate(caseId),
-    onSuccess: (_, caseId) => qc.invalidateQueries({ queryKey: ['summary', caseId] }),
+    onSuccess: (_, caseId) => {
+      for (const key of ['summary', 'entities', 'graph', 'timeline', 'inconsistencies', 'duplicates']) {
+        qc.invalidateQueries({ queryKey: [key, caseId] })
+      }
+    },
   })
 }
 

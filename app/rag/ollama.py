@@ -10,8 +10,10 @@ async def stream_chat(messages: list[dict[str, str]]):
             async for line in r.aiter_lines():
                 if line: yield line
 async def complete_chat(messages: list[dict[str, str]]) -> str:
-    async with httpx.AsyncClient(base_url=settings.ollama_base_url,timeout=None) as c:
-        response = await c.post("/api/chat",json={"model":settings.chat_model,"messages":messages,"stream":False})
+    # A bounded request prevents the summary screen from spinning forever when
+    # the local model is overloaded or has stopped responding.
+    async with httpx.AsyncClient(base_url=settings.ollama_base_url,timeout=httpx.Timeout(180, connect=10)) as c:
+        response = await c.post("/api/chat",json={"model":settings.chat_model,"messages":messages,"stream":False,"format":"json","options":{"num_predict":800,"temperature":0.1}})
         response.raise_for_status()
         return response.json().get("message",{}).get("content","")
 async def ollama_health():
