@@ -71,7 +71,7 @@ export default function SummaryView() {
           </Button>
           {generateSummary.isPending && (
             <p role="status" className="text-xs text-muted-foreground">
-              The local AI is reviewing the uploaded files. This can take up to two minutes.
+              Gemini is reviewing extracted text in batches. Larger cases may take longer.
             </p>
           )}
         </div>
@@ -92,6 +92,32 @@ export default function SummaryView() {
         </div>
       ) : (
         <div id="summary-report" className="space-y-6">
+          {summary.coverage && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold">Evidence Analysis Coverage</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-xs">
+                <div className="flex flex-wrap justify-between gap-2 text-muted-foreground">
+                  <span>{summary.coverage.analyzed_files} of {summary.coverage.uploaded_files} files analyzed</span>
+                  <span>{summary.coverage.analyzed_chunks} text segments reviewed</span>
+                  <span className="font-semibold text-foreground">{summary.coverage.coverage_percentage}% by file size</span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                  <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${summary.coverage.coverage_percentage}%` }} />
+                </div>
+                {summary.coverage.unprocessed_files.length > 0 && (
+                  <div>
+                    <p className="font-semibold text-amber-700 dark:text-amber-400">Not analyzed by this run</p>
+                    <ul className="mt-1 list-disc space-y-1 pl-5 text-muted-foreground">
+                      {summary.coverage.unprocessed_files.map((filename) => <li key={filename}>{filename}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {/* Executive Summary */}
           <Card className="border-primary/30 bg-primary/5">
             <CardHeader className="pb-2">
@@ -101,7 +127,7 @@ export default function SummaryView() {
                   Executive Summary
                 </CardTitle>
                 <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground">
-                  <Badge variant="outline">{summary.model || 'Local AI'}</Badge>
+                  <Badge variant="outline">{summary.model || 'Gemini'}</Badge>
                   {summary.generated_at && <span>{formatDate(summary.generated_at)}</span>}
                 </div>
               </div>
@@ -158,12 +184,12 @@ export default function SummaryView() {
             </Card>
           </div>
 
-          {/* Key Persons Involved */}
+          {/* People identified in the record */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <Users className="h-4 w-4 text-primary" />
-                Principal Parties & Witnesses
+                People Identified in the Record
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -175,7 +201,33 @@ export default function SummaryView() {
                     <p className="text-[11px] text-muted-foreground">{p.significance}</p>
                   </div>
                 ))}
+                {(!Array.isArray(summary.key_persons) || summary.key_persons.length === 0) && (
+                  <p className="col-span-full text-xs text-muted-foreground">No parties or other people were identified in the analyzed text.</p>
+                )}
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold">Witness Leads</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {Array.isArray(summary.witnesses) && summary.witnesses.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                  {summary.witnesses.map((witness, i) => (
+                    <div key={`${witness.name}-${i}`} className="rounded-md border p-3 bg-muted/20 text-xs space-y-1">
+                      <p className="font-semibold text-foreground">{witness.name}</p>
+                      <p className="text-[11px] text-primary font-medium">{witness.role}</p>
+                      <p className="text-[11px] text-muted-foreground">{witness.significance}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No witness leads were supported by the extracted text. This is not a finding that no witnesses exist; review the original files and interview records.
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>

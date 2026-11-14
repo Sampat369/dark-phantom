@@ -9,7 +9,7 @@ export function TopBar() {
   const { caseId: paramCaseId } = useParams<{ caseId?: string }>()
   const activeCaseId = useAppStore((s) => s.activeCaseId)
   const currentCaseId = paramCaseId || activeCaseId
-  const { data: currentCase } = useCase(currentCaseId)
+  const { data: currentCase } = useCase(currentCaseId || undefined)
 
   const theme = useAppStore((s) => s.theme)
   const toggleTheme = useAppStore((s) => s.toggleTheme)

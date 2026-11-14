@@ -35,7 +35,7 @@ export function Sidebar() {
     data: currentCase,
     isLoading: isCaseLoading,
     isError: isCaseError,
-  } = useCase(currentCaseId)
+  } = useCase(currentCaseId || undefined)
   const caseLabel = currentCase?.name || (
     isCaseLoading
       ? 'Loading case…'

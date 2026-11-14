@@ -15,6 +15,7 @@ export function useCases(options?: Partial<UseQueryOptions>) {
     queryKey: ['cases'],
     queryFn: () => casesApi.list(),
     staleTime: QUERY_STALE_TIME,
+    refetchOnMount: 'always',
     ...(options as object),
   })
 }
@@ -25,6 +26,7 @@ export function useCase(id: string | undefined) {
     queryFn: () => casesApi.get(id!),
     enabled: !!id,
     staleTime: QUERY_STALE_TIME,
+    refetchOnMount: 'always',
   })
 }
 
@@ -53,7 +55,12 @@ export function useDeleteCase() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => casesApi.delete(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['cases'] }),
+    onSuccess: (_, id) => {
+      void qc.invalidateQueries({ queryKey: ['cases'] })
+      for (const key of ['cases', 'evidence', 'entities', 'graph', 'duplicates', 'summary', 'timeline', 'inconsistencies', 'search']) {
+        qc.removeQueries({ queryKey: [key, id] })
+      }
+    },
   })
 }
 
@@ -65,6 +72,7 @@ export function useEvidence(caseId: string | undefined) {
     queryFn: () => evidenceApi.list(caseId!),
     enabled: !!caseId,
     staleTime: QUERY_STALE_TIME,
+    refetchOnMount: 'always',
     refetchInterval: (query) => {
       const data = query.state.data as { items: Evidence[] } | undefined
       const hasActive = data?.items.some(
@@ -92,7 +100,12 @@ export function useUploadEvidence() {
       files.forEach((file) => formData.append('files', file))
       return evidenceApi.upload(caseId, formData)
     },
-    onSuccess: (_, { caseId }) => qc.invalidateQueries({ queryKey: ['evidence', caseId] }),
+    onSuccess: (_, { caseId }) => {
+      void qc.invalidateQueries({ queryKey: ['cases'] })
+      for (const key of ['evidence', 'entities', 'graph', 'duplicates', 'summary', 'timeline', 'inconsistencies', 'search']) {
+        void qc.invalidateQueries({ queryKey: [key, caseId] })
+      }
+    },
   })
 }
 
@@ -137,6 +150,17 @@ export function useTimeline(caseId: string | undefined) {
     queryFn: () => timelineApi.list(caseId!),
     enabled: !!caseId,
     staleTime: QUERY_STALE_TIME,
+    refetchOnMount: 'always',
+  })
+}
+
+export function useGenerateTimeline() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (caseId: string) => timelineApi.regenerate(caseId),
+    onSuccess: (_, caseId) => {
+      void qc.invalidateQueries({ queryKey: ['timeline', caseId] })
+    },
   })
 }
 
@@ -148,6 +172,7 @@ export function useGraph(caseId: string | undefined) {
     queryFn: () => graphApi.get(caseId!),
     enabled: !!caseId,
     staleTime: QUERY_STALE_TIME,
+    refetchOnMount: 'always',
   })
 }
 
@@ -157,6 +182,11 @@ export function useEntities(caseId: string | undefined) {
     queryFn: () => entitiesApi.list(caseId!),
     enabled: !!caseId,
     staleTime: QUERY_STALE_TIME,
+    refetchOnMount: 'always',
+    select: (response) => ({
+      ...response,
+      items: response.items.filter((entity) => entity.case_id === caseId),
+    }),
   })
 }
 
@@ -168,6 +198,7 @@ export function useInconsistencies(caseId: string | undefined) {
     queryFn: () => inconsistenciesApi.list(caseId!),
     enabled: !!caseId,
     staleTime: QUERY_STALE_TIME,
+    refetchOnMount: 'always',
   })
 }
 
@@ -188,6 +219,11 @@ export function useDuplicates(caseId: string | undefined) {
     queryFn: () => duplicatesApi.list(caseId!),
     enabled: !!caseId,
     staleTime: QUERY_STALE_TIME,
+    refetchOnMount: 'always',
+    select: (response) => ({
+      ...response,
+      items: response.items.filter((group) => group.case_id === caseId),
+    }),
   })
 }
 
@@ -199,7 +235,9 @@ export function useSummary(caseId: string | undefined) {
     queryFn: () => summaryApi.get(caseId!),
     enabled: !!caseId,
     staleTime: QUERY_STALE_TIME,
+    refetchOnMount: 'always',
     retry: false,
+    select: (summary) => (summary?.case_id === caseId ? summary : null),
   })
 }
 

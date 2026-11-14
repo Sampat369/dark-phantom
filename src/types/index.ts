@@ -204,6 +204,14 @@ export interface Summary {
   evidence_gaps: string[]
   recommendations: string[]
   word_count: number
+  witnesses?: Array<{ name: string; role: string; significance: string }>
+  coverage?: {
+    uploaded_files: number
+    analyzed_files: number
+    analyzed_chunks: number
+    coverage_percentage: number
+    unprocessed_files: string[]
+  }
 }
 
 // ─── Search ──────────────────────────────────────────────────────────────────

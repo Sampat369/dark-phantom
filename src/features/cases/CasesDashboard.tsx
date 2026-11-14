@@ -194,7 +194,7 @@ export default function CasesDashboard() {
             Cryptographically verified digital evidence management and forensic investigation registry.
           </p>
           <p className="text-xs text-muted-foreground">
-            Demo workspace as of 14/11/2026. Sample names and records are fictional; replace them with authorized matter data before operational use.
+            Workspace date: 14/11/2026. Gemini analyzes extracted text; PDF, office, image, audio, and video extraction requires the backend.
           </p>
         </div>
 

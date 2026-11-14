@@ -50,6 +50,8 @@ export const evidenceApi = {
 export const timelineApi = {
   list: (caseId: string) =>
     apiClient.get<{ items: TimelineEvent[]; total: number }>(`/cases/${caseId}/timeline`),
+  regenerate: (caseId: string) =>
+    apiClient.post<{ items: TimelineEvent[]; total: number }>(`/cases/${caseId}/timeline/regenerate`),
 }
 
 // ─── Graph ────────────────────────────────────────────────────────────────────

@@ -1,27 +1,46 @@
 import React from 'react'
 import { useParams } from 'react-router-dom'
-import { Clock, Calendar, Tag, AlertCircle, FileText } from 'lucide-react'
-import { useTimeline } from '@/hooks/queries'
+import { Clock, Calendar, Tag, FileText, RefreshCw } from 'lucide-react'
+import { useGenerateTimeline, useTimeline } from '@/hooks/queries'
 import { formatDate } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
+import { toast } from 'sonner'
 
 export default function Timeline() {
   const { caseId } = useParams<{ caseId: string }>()
-  const { data, isLoading } = useTimeline(caseId || 'case-001')
+  const currentCaseId = caseId || 'case-001'
+  const { data, isLoading } = useTimeline(currentCaseId)
+  const generateTimeline = useGenerateTimeline()
 
   const events = data?.items || []
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="border-b pb-4">
-        <h1 className="text-2xl font-bold tracking-tight">Case Chronology & Timeline</h1>
-        <p className="text-sm text-muted-foreground">
-          Chronological reconstruction of events synthesized from emails, documents, and transcripts.
-        </p>
+      <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Case Chronology & Timeline</h1>
+          <p className="text-sm text-muted-foreground">
+            Chronological reconstruction of dated events found in the case evidence.
+          </p>
+        </div>
+        <Button
+          disabled={generateTimeline.isPending}
+          onClick={() => generateTimeline.mutate(currentCaseId, {
+            onError: (error) => toast.error('Could not generate timeline', { description: error.message }),
+            onSuccess: (result) => toast.success(`Timeline generated: ${result.total} dated event${result.total === 1 ? '' : 's'}.`),
+          })}
+          className="gap-2"
+        >
+          <RefreshCw className={`h-4 w-4 ${generateTimeline.isPending ? 'animate-spin' : ''}`} />
+          {generateTimeline.isPending ? 'Analyzing evidence...' : 'Generate Timeline'}
+        </Button>
       </div>
+
+      {generateTimeline.isPending && <p role="status" className="text-xs text-muted-foreground">Gemini is extracting dated events from indexed evidence.</p>}
 
       {isLoading ? (
         <div className="space-y-6 pl-6 relative before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-border">
@@ -35,7 +54,7 @@ export default function Timeline() {
       ) : events.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <Clock className="mx-auto h-8 w-8 mb-2 opacity-40" />
-          No chronological events generated yet.
+          No chronological events generated yet. Select <strong>Generate Timeline</strong> to analyze this case’s indexed evidence.
         </div>
       ) : (
         <div className="relative pl-6 space-y-8 before:absolute before:left-2 before:top-3 before:bottom-3 before:w-0.5 before:bg-primary/30">
