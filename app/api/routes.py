@@ -190,7 +190,7 @@ async def get_evidence(evidence_id:str,db:AsyncSession=Depends(get_db)):
 async def get_file(evidence_id:str,db:AsyncSession=Depends(get_db)):
     e=await db.get(EvidenceFile,evidence_id)
     if not e: raise HTTPException(404,"Evidence not found")
-    await append_entry(db,e.id,"view","api",{}); await db.commit(); return FileResponse(e.storage_path,filename=e.original_filename,media_type=e.mime_type)
+    await append_entry(db,e.id,"view","api",{}); await db.commit(); return FileResponse(e.storage_path,filename=e.original_filename,media_type=e.mime_type,content_disposition_type="inline")
 @router.get("/evidence/{evidence_id}/chunks")
 async def get_chunks(evidence_id:str,db:AsyncSession=Depends(get_db)):
     chunks=(await db.execute(select(Chunk).where(Chunk.evidence_id==evidence_id))).scalars().all(); items=[{"id":chunk.id,"evidence_id":chunk.evidence_id,"content":chunk.text,"page":chunk.page,"timestamp_start":None,"timestamp_end":None,"chunk_index":index} for index,chunk in enumerate(chunks)]; return {"items":items,"total":len(items),"page":1,"page_size":len(items),"has_next":False}

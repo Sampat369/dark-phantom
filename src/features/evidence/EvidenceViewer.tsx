@@ -143,12 +143,26 @@ export default function EvidenceViewer() {
                   <div className="flex min-h-[450px] items-center justify-center bg-black p-2">
                     <video controls preload="metadata" src={fileUrl} className="max-h-[70vh] max-w-full" />
                   </div>
-                ) : ['pdf', 'document', 'email', 'chat'].includes(item.type) ? (
+                ) : item.type === 'pdf' ? (
                   <iframe
                     title={`Preview of ${item.original_filename}`}
                     src={fileUrl}
                     className="h-[65vh] min-h-[450px] w-full border-0"
                   />
+                ) : ['document', 'email', 'chat'].includes(item.type) ? (
+                  <div className="max-h-[65vh] min-h-[450px] overflow-auto p-5">
+                    {chunks?.items.length ? (
+                      <pre className="whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-foreground">
+                        {chunks.items.map((chunk) => chunk.content).join('\n\n')}
+                      </pre>
+                    ) : (
+                      <p className="py-16 text-center text-sm text-muted-foreground">
+                        {item.processing_status === 'processing' || item.processing_status === 'queued'
+                          ? 'This document is still being processed. Its preview will appear when text extraction finishes.'
+                          : 'No readable text was extracted from this document.'}
+                      </p>
+                    )}
+                  </div>
                 ) : (
                   <div className="flex min-h-[450px] flex-col items-center justify-center p-8 text-center">
                     <FileText className="h-16 w-16 text-primary/40 mb-3" />
