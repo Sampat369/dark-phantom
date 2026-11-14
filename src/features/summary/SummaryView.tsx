@@ -71,7 +71,7 @@ export default function SummaryView() {
           </Button>
           {generateSummary.isPending && (
             <p role="status" className="text-xs text-muted-foreground">
-              Gemini is reviewing extracted text in batches. Larger cases may take longer.
+              Gemini is reviewing text and supported media evidence in batches. Large files can take several minutes.
             </p>
           )}
         </div>
@@ -114,6 +114,22 @@ export default function SummaryView() {
                     </ul>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          )}
+
+          {Array.isArray(summary.evidence_gaps) && summary.evidence_gaps.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                  Evidence Gaps & Processing Notes
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+                  {summary.evidence_gaps.map((gap, index) => <li key={index}>{gap}</li>)}
+                </ul>
               </CardContent>
             </Card>
           )}
