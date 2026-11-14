@@ -128,7 +128,10 @@ export default function SummaryView() {
               </CardHeader>
               <CardContent>
                 <ul className="space-y-2 text-xs">
-                  {(Array.isArray(summary.recommendations) ? summary.recommendations : []).map((rec, i) => (
+                  {(Array.isArray(summary.recommendations) && summary.recommendations.length > 0
+                    ? summary.recommendations
+                    : ['No evidence-based next steps are available yet. Process additional exhibits and regenerate the brief.']
+                  ).map((rec, i) => (
                     <li key={i} className="flex items-start gap-2">
                       <span className="font-mono text-amber-500 font-bold">→</span>
                       <span className="text-muted-foreground">{rec}</span>

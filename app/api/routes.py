@@ -61,6 +61,19 @@ def _words(value: str) -> set[str]:
     words = {word for word in re.findall(r"[a-z0-9]+", value.lower()) if len(word) > 2 and word not in stop_words}
     return {word[:-1] if word.endswith("s") and len(word) > 4 else word for word in words}
 
+def _evidence_next_steps(rows) -> list[str]:
+    evidence_text=" ".join(f"{evidence.original_filename} {chunk.text}" for chunk,evidence in rows).lower()
+    steps=[]
+    if all(term in evidence_text for term in ("purchase order","invoice")) and any(term in evidence_text for term in ("receipt","physical count","warehouse")):
+        steps.append("Reconcile the purchase order, vendor invoice, and goods receipt; document the quantity and amount differences shown in those records.")
+    if "bank change" in evidence_text or "account change" in evidence_text:
+        steps.append("Verify the bank account change using a previously verified vendor contact, then compare it with the payment ledger.")
+    if "payment" in evidence_text and any(term in evidence_text for term in ("email","chat","approval")):
+        steps.append("Compare the approval messages with the payment record and preserve the original message exports for review.")
+    if not steps and rows:
+        steps.append("Identify and obtain the source records needed to verify the dates, amounts, and parties referenced in the uploaded exhibits.")
+    return steps
+
 def _cosine_similarity(left: list[float], right: list[float]) -> float:
     if len(left) != len(right):
         return 0.0
@@ -449,6 +462,8 @@ async def create_summary(case_id:str,db:AsyncSession=Depends(get_db)):
         "evidence_gaps":string_list("evidence_gaps"),"recommendations":string_list("recommendations"),
         "word_count":len(summary_text.split()),
     }
+    if not result["recommendations"]:
+        result["recommendations"]=_evidence_next_steps(rows)
     # Rebuild derived case analysis from this generation so every analysis tab
     # reflects the same indexed evidence and model response as the report.
     valid_chunks={chunk.id:chunk for chunk,_ in rows}
@@ -583,6 +598,8 @@ async def get_summary(case_id:str,db:AsyncSession=Depends(get_db)):
                 score=sum(term in sentence.lower() for term in ("invoice","purchase order","physical count","payment","quantity","account","discrepancy","received"))
                 if score: facts.append((score,f"{sentence} [{evidence.original_filename}]."))
         data["key_facts"]=[fact for _,fact in sorted(facts,key=lambda item:item[0],reverse=True)[:5]]
+    if not data.get("recommendations"):
+        data["recommendations"]=_evidence_next_steps(rows)
     if not data.get("key_persons") or not data.get("key_organizations"):
         entities=(await db.execute(select(Entity).where(Entity.case_id==case_id))).scalars().all()
         if not data.get("key_persons"):
