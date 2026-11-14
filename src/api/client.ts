@@ -25,7 +25,14 @@ class ApiClient {
       } catch {
         errorData = { detail: `HTTP ${response.status}: ${response.statusText}`, status_code: response.status }
       }
-      throw new Error(errorData.detail || `Request failed with status ${response.status}`)
+      const detail = errorData.detail
+      const message =
+        typeof detail === 'string'
+          ? detail
+          : detail && typeof detail === 'object' && 'detail' in detail && typeof detail.detail === 'string'
+            ? detail.detail
+            : `Request failed with status ${response.status}`
+      throw new Error(message)
     }
 
     if (response.status === 204) {

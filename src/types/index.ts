@@ -231,7 +231,7 @@ export interface PaginatedResponse<T> {
 }
 
 export interface ApiError {
-  detail: string
+  detail: string | { detail?: string; code?: string }
   status_code: number
   errors?: Record<string, string[]>
 }

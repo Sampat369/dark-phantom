@@ -110,8 +110,13 @@ export default function CasesDashboard() {
       setDescription('')
       setTagInput('')
       setCreateOpen(false)
-    } catch {
-      toast.error('Failed to create case')
+    } catch (error) {
+      toast.error('Failed to create case', {
+        description:
+          error instanceof Error
+            ? error.message
+            : 'The API request failed. Check that the backend is running and try again.',
+      })
     }
   }
 
