@@ -1,4 +1,5 @@
 import json, hashlib, re
+from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import APIRouter, Depends, UploadFile, File, BackgroundTasks, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
@@ -11,7 +12,7 @@ from app.schemas.common import *
 from app.services.storage import save_upload
 from app.services.custody import append_entry
 from app.services.ingestion import process_evidence_by_id
-from app.rag.ollama import embed, stream_chat
+from app.rag.ollama import complete_chat, embed, stream_chat
 router=APIRouter(dependencies=[Depends(require_api_key)])
 def err(message,code="error"): raise HTTPException(400,detail={"detail":message,"code":code})
 
@@ -287,6 +288,59 @@ async def scan_inconsistencies(case_id:str): return {"status":"queued","disclaim
 @router.get("/cases/{case_id}/duplicates")
 async def duplicates(case_id:str,db:AsyncSession=Depends(get_db)): return (await db.execute(select(DuplicateGroup).where(DuplicateGroup.case_id==case_id))).scalars().all()
 @router.post("/cases/{case_id}/summary")
-async def create_summary(case_id:str): return {"status":"queued","disclaimer":"AI-generated investigative summary requires human verification and is not a legal conclusion."}
+async def create_summary(case_id:str,db:AsyncSession=Depends(get_db)):
+    case=await db.get(Case,case_id)
+    if not case: raise HTTPException(404,"Case not found")
+    rows=(await db.execute(
+        select(Chunk,EvidenceFile)
+        .join(EvidenceFile,EvidenceFile.id==Chunk.evidence_id)
+        .where(EvidenceFile.case_id==case_id)
+        .order_by(EvidenceFile.uploaded_at,Chunk.embedding_id)
+        .limit(32)
+    )).all()
+    if not rows: raise HTTPException(409,"No processed evidence is available yet. Upload documents and wait for processing to finish.")
+    evidence_context="\n\n".join(
+        f"[{index}] {evidence.original_filename}" + (f", page {chunk.page}" if chunk.page else "") + f"\n{chunk.text}"
+        for index,(chunk,evidence) in enumerate(rows,1)
+    )
+    messages=[
+        {"role":"system","content":"Create a concise, neutral case brief using only the supplied evidence excerpts. Do not invent facts. Distinguish documented facts from inferences and say when evidence is insufficient. Return valid JSON only with keys: executive_summary (string), key_facts (array of strings), key_persons (array of objects with name, role, significance), key_organizations (array of objects with name, role), chronology (array of objects with date, event), inconsistencies_summary (string), evidence_gaps (array of strings), recommendations (array of strings). Recommendations should be evidence-gathering steps, not legal advice."},
+        {"role":"user","content":f"Case: {case.name}\nDescription: {case.description or 'Not provided'}\n\nEvidence excerpts:\n{evidence_context}"},
+    ]
+    raw=await complete_chat(messages)
+    try:
+        json_start=raw.find("{"); json_end=raw.rfind("}")
+        if json_start<0 or json_end<json_start: raise ValueError("Model did not return JSON")
+        generated=json.loads(raw[json_start:json_end+1])
+    except (ValueError,json.JSONDecodeError):
+        generated={"executive_summary":raw.strip(),"key_facts":[],"key_persons":[],"key_organizations":[],"chronology":[],"inconsistencies_summary":"","evidence_gaps":[],"recommendations":[]}
+    def string_list(name:str)->list[str]:
+        values=generated.get(name,[])
+        return [value.strip() for value in values if isinstance(value,str) and value.strip()] if isinstance(values,list) else []
+    def object_list(name:str,fields:tuple[str,...])->list[dict]:
+        values=generated.get(name,[])
+        if not isinstance(values,list): return []
+        return [{field:str(value.get(field,"")).strip() for field in fields} for value in values if isinstance(value,dict)]
+    summary_text=str(generated.get("executive_summary","")).strip()
+    if not summary_text: summary_text="The model did not produce a summary. Please try again."
+    result={
+        "id":str(__import__("uuid").uuid4()),"case_id":case_id,"generated_at":datetime.now(timezone.utc).isoformat(),"model":settings.chat_model,
+        "executive_summary":summary_text,"key_facts":string_list("key_facts"),
+        "key_persons":object_list("key_persons",("name","role","significance")),
+        "key_organizations":object_list("key_organizations",("name","role")),
+        "chronology":object_list("chronology",("date","event")),
+        "inconsistencies_summary":str(generated.get("inconsistencies_summary", "")),
+        "evidence_gaps":string_list("evidence_gaps"),"recommendations":string_list("recommendations"),
+        "word_count":len(summary_text.split()),
+    }
+    saved=await db.get(CaseSummary,case_id)
+    if saved: saved.data=result
+    else: db.add(CaseSummary(case_id=case_id,data=result))
+    await db.commit()
+    return result
 @router.get("/cases/{case_id}/summary")
-async def get_summary(case_id:str): return {"case_id":case_id,"overview":None,"key_people":[],"key_dates":[],"key_events":[],"notable_inconsistencies":[],"open_questions":[],"citations":[],"disclaimer":"AI output requires human verification and is not a legal conclusion."}
+async def get_summary(case_id:str,db:AsyncSession=Depends(get_db)):
+    case=await db.get(Case,case_id)
+    if not case: raise HTTPException(404,"Case not found")
+    summary=await db.get(CaseSummary,case_id)
+    return summary.data if summary else None

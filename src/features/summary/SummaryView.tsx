@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { toast } from 'sonner'
 
 export default function SummaryView() {
   const { caseId } = useParams<{ caseId: string }>()
@@ -23,8 +24,11 @@ export default function SummaryView() {
   const generateSummary = useGenerateSummary()
 
   const handleGenerate = () => {
-    generateSummary.mutate(currentCaseId)
+    generateSummary.mutate(currentCaseId, {
+      onError: (error) => toast.error('Could not generate summary', { description: error.message }),
+    })
   }
+  const hasSummary = !!summary && typeof summary.executive_summary === 'string'
 
   return (
     <div className="space-y-6">
@@ -58,10 +62,10 @@ export default function SummaryView() {
             <Skeleton className="h-64 w-full" />
           </div>
         </div>
-      ) : !summary ? (
+      ) : !hasSummary ? (
         <div className="text-center py-12 text-muted-foreground">
           <Sparkles className="mx-auto h-8 w-8 mb-2 text-primary opacity-60" />
-          No summary brief generated for this case yet. Click "Regenerate Brief" to create one.
+          {summary ? 'The saved summary is incomplete. Click “Regenerate Brief” to rebuild it.' : 'No summary brief generated for this case yet. Click “Regenerate Brief” to create one.'}
         </div>
       ) : (
         <div className="space-y-6">
@@ -74,8 +78,8 @@ export default function SummaryView() {
                   Executive Summary
                 </CardTitle>
                 <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground">
-                  <Badge variant="outline">{summary.model}</Badge>
-                  <span>{formatDate(summary.generated_at)}</span>
+                  <Badge variant="outline">{summary.model || 'Local AI'}</Badge>
+                  {summary.generated_at && <span>{formatDate(summary.generated_at)}</span>}
                 </div>
               </div>
             </CardHeader>
@@ -97,7 +101,7 @@ export default function SummaryView() {
               </CardHeader>
               <CardContent>
                 <ul className="space-y-2 text-xs">
-                  {summary.key_facts.map((fact, i) => (
+                  {(Array.isArray(summary.key_facts) ? summary.key_facts : []).map((fact, i) => (
                     <li key={i} className="flex items-start gap-2">
                       <span className="font-mono text-primary font-bold">•</span>
                       <span className="text-muted-foreground">{fact}</span>
@@ -117,7 +121,7 @@ export default function SummaryView() {
               </CardHeader>
               <CardContent>
                 <ul className="space-y-2 text-xs">
-                  {summary.recommendations.map((rec, i) => (
+                  {(Array.isArray(summary.recommendations) ? summary.recommendations : []).map((rec, i) => (
                     <li key={i} className="flex items-start gap-2">
                       <span className="font-mono text-amber-500 font-bold">→</span>
                       <span className="text-muted-foreground">{rec}</span>
@@ -138,7 +142,7 @@ export default function SummaryView() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                {summary.key_persons.map((p, i) => (
+                {(Array.isArray(summary.key_persons) ? summary.key_persons : []).map((p, i) => (
                   <div key={i} className="rounded-md border p-3 bg-muted/20 text-xs space-y-1">
                     <p className="font-semibold text-foreground">{p.name}</p>
                     <p className="text-[11px] text-primary font-medium">{p.role}</p>

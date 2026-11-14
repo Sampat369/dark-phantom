@@ -9,6 +9,11 @@ async def stream_chat(messages: list[dict[str, str]]):
             r.raise_for_status()
             async for line in r.aiter_lines():
                 if line: yield line
+async def complete_chat(messages: list[dict[str, str]]) -> str:
+    async with httpx.AsyncClient(base_url=settings.ollama_base_url,timeout=None) as c:
+        response = await c.post("/api/chat",json={"model":settings.chat_model,"messages":messages,"stream":False})
+        response.raise_for_status()
+        return response.json().get("message",{}).get("content","")
 async def ollama_health():
     try:
         async with httpx.AsyncClient(base_url=settings.ollama_base_url,timeout=3) as c:

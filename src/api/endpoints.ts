@@ -83,7 +83,7 @@ export const duplicatesApi = {
 // ─── Summary ──────────────────────────────────────────────────────────────────
 
 export const summaryApi = {
-  get: (caseId: string) => apiClient.get<Summary>(`/cases/${caseId}/summary`),
+  get: (caseId: string) => apiClient.get<Summary | null>(`/cases/${caseId}/summary`),
   generate: (caseId: string) => apiClient.post<Summary>(`/cases/${caseId}/summary`),
 }
 
