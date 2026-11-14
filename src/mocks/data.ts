@@ -691,6 +691,17 @@ export const mockSearchResults: SearchResult[] = [
     score: 0.88,
     highlights: ['no prior formal complaints', 'disciplinary actions'],
   },
+  {
+    chunk_id: 'chunk-005',
+    evidence_id: 'ev-005',
+    evidence_filename: 'Slack Export - #project-titan - Q1 2024.json',
+    evidence_type: 'chat',
+    content: 'The Q1 2024 Slack export shows a change in tone and Harrison being excluded from key Project Titan discussions following his HR complaint.',
+    page: null,
+    timestamp: null,
+    score: 0.86,
+    highlights: ['change in tone', 'excluded from key discussions', 'following HR complaint'],
+  },
 ]
 
 // ─── Custody Log ──────────────────────────────────────────────────────────────

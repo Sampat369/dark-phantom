@@ -14,6 +14,9 @@ __pycache__/
 *.so
 .Python
 .venv/
+.python313/
+.python-runtime-installer.exe
+.python313-embed.zip
 venv/
 env/
 ENV/

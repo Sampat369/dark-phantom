@@ -10,7 +10,7 @@ interface SSECallbacks {
 }
 
 interface UseSSEChatReturn {
-  sendMessage: (caseId: string, message: string, sessionId?: string) => Promise<void>
+  sendMessage: (caseId: string, message: string, sessionId?: string, history?: { role: 'user' | 'assistant'; content: string }[]) => Promise<void>
   stop: () => void
   isStreaming: boolean
 }
@@ -28,7 +28,7 @@ export function useSSEChat(callbacks: SSECallbacks): UseSSEChatReturn {
   }, [])
 
   const sendMessage = useCallback(
-    async (caseId: string, message: string, sessionId?: string) => {
+    async (caseId: string, message: string, sessionId?: string, history: { role: 'user' | 'assistant'; content: string }[] = []) => {
       // Abort any existing stream
       if (abortControllerRef.current) {
         abortControllerRef.current.abort()
@@ -42,7 +42,7 @@ export function useSSEChat(callbacks: SSECallbacks): UseSSEChatReturn {
         const response = await fetch(`${API_BASE_URL}/cases/${caseId}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message, session_id: sessionId }),
+          body: JSON.stringify({ message, session_id: sessionId, history }),
           signal: controller.signal,
         })
 
@@ -74,6 +74,7 @@ export function useSSEChat(callbacks: SSECallbacks): UseSSEChatReturn {
                   type: string
                   content?: string
                   citations?: Citation[]
+                  message?: string
                 }
 
                 switch (event.type) {
@@ -83,6 +84,9 @@ export function useSSEChat(callbacks: SSECallbacks): UseSSEChatReturn {
                   case 'citations':
                     if (event.citations) callbacks.onCitation(event.citations)
                     break
+                  case 'error':
+                    callbacks.onError(new Error(event.message || 'The assistant could not complete the request.'))
+                    return
                   case 'done':
                     callbacks.onDone()
                     break

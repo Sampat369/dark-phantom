@@ -14,10 +14,133 @@ import {
   mockCustodyLog,
   mockChunks,
 } from './data'
-import type { Case, Evidence, Inconsistency } from '@/types'
+import type { Case, Citation, Evidence, Inconsistency } from '@/types'
 
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms))
 const mockEvidenceFiles = new Map<string, File>()
+
+const createMockChatAnswer = (caseId: string, question: string) => {
+  const normalizedQuestion = question.trim().toLowerCase()
+  if (/^(hi|hey|hello|heya|good morning|good afternoon|good evening)[!. ,?]*$/.test(normalizedQuestion)) {
+    return { answer: 'Hi! Ask me anything about the evidence in this case. You can use casual wording, for example: “what happened before James got fired?”', citations: [] as Citation[] }
+  }
+  if (/^(thanks|thank you|thx|ty)[!. ,?]*$/.test(normalizedQuestion)) {
+    return { answer: 'You’re welcome. If you want, ask a follow-up about one of the cited exhibits or events.', citations: [] as Citation[] }
+  }
+
+  const caseEvidenceIds = new Set(
+    mockEvidence.filter((evidence) => evidence.case_id === caseId).map((evidence) => evidence.id)
+  )
+  const isTimelineQuestion = /timeline|sequence|leading up|what happened before|order of events|before.*(fired|terminated|let go)/.test(normalizedQuestion)
+  if (isTimelineQuestion) {
+    const events = mockTimeline
+      .filter((event) => event.case_id === caseId && event.timestamp >= '2023-12-01' && event.timestamp <= '2024-04-02')
+      .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+    if (events.length > 0) {
+      const citations: Citation[] = []
+      const lines = events.map((event) => {
+        const source = event.evidence_ids.map((id) => mockEvidence.find((evidence) => evidence.id === id)).find(Boolean)
+        if (!source) return `• ${event.timestamp.slice(0, 10)} — ${event.title}: ${event.description}`
+        const number = citations.length + 1
+        citations.push({
+          number,
+          evidence_id: source.id,
+          evidence_filename: source.original_filename,
+          snippet: event.description,
+          page: null,
+          timestamp: null,
+          chunk_id: `timeline-${event.id}`,
+        })
+        return `• ${event.timestamp.slice(0, 10)} — ${event.title}: ${event.description} [${number}]`
+      })
+      return {
+        answer: `Here’s the timeline I found in this case:\n\n${lines.join('\n')}\n\nThe records show the termination followed the March 15 HR complaint by 18 days.`,
+        citations,
+      }
+    }
+  }
+
+  const stopWords = new Set(['about', 'after', 'again', 'does', 'from', 'have', 'into', 'that', 'them', 'then', 'there', 'these', 'they', 'this', 'what', 'when', 'where', 'which', 'with', 'would', 'your', 'could', 'should', 'the', 'and', 'for', 'was', 'were', 'are', 'how', 'who', 'why', 'can', 'did', 'has', 'had', 'his', 'her', 'their', 'it', 'me', 'please', 'summarise', 'summarize', 'summary'])
+  const terms = normalizedQuestion.match(/[a-z0-9]+/g)?.filter((word) => word.length > 2 && !stopWords.has(word)) ?? []
+  const synonyms: Record<string, string[]> = {
+    fire: ['fired', 'firing', 'termination', 'terminated'],
+    fired: ['fire', 'firing', 'termination', 'terminated'],
+    firing: ['fire', 'fired', 'termination', 'terminated'],
+    terminated: ['termination', 'fired', 'fire'],
+    laid: ['termination', 'fired', 'terminated'],
+    boss: ['manager', 'supervisor'],
+    complained: ['complaint', 'reported', 'hr'],
+    reported: ['complaint', 'complained', 'hr'],
+    warnings: ['warning', 'disciplinary'],
+    warning: ['warnings', 'disciplinary'],
+    unhappy: ['complaint', 'harassment'],
+    bullied: ['harassment', 'complaint'],
+  }
+  const expandedTerms = new Set(terms)
+  terms.forEach((term) => synonyms[term]?.forEach((synonym) => expandedTerms.add(synonym)))
+  const normalizedTerms = [...expandedTerms].map((word) => word.replace(/(ing|ed|es|s)$/, ''))
+
+  const isSummaryRequest = /summari[sz](?:e|ing|ation)?|summary|overview|gist/i.test(normalizedQuestion)
+  let matches = mockSearchResults
+    .filter((result) => caseEvidenceIds.has(result.evidence_id))
+    .map((result) => {
+      const sourceText = `${result.evidence_filename} ${result.content}`.toLowerCase()
+      const sourceWords = sourceText.match(/[a-z0-9]+/g) ?? []
+      const score = normalizedTerms.reduce((total, term) => {
+        return total + (sourceWords.some((word) => word === term || word.startsWith(term) || term.startsWith(word)) ? 1 : 0)
+      }, 0)
+      return { result, score }
+    })
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3)
+
+  if (isSummaryRequest) {
+    const namedFileMatches = matches.filter(({ result }) => {
+      const filenameWords = result.evidence_filename.toLowerCase().match(/[a-z0-9]+/g) ?? []
+      const filenameTermMatches = normalizedTerms.filter((term) =>
+        filenameWords.some((word) => word === term || word.startsWith(term) || term.startsWith(word))
+      )
+      return filenameTermMatches.length >= 2
+    })
+    if (namedFileMatches.length > 0) matches = namedFileMatches.slice(0, 1)
+  }
+
+  if (matches.length === 0) {
+    return {
+      answer: `I couldn't find an indexed exhibit in this case that directly matches “${question.trim()}”. Try asking about a person, date, event, or document title in the case evidence.`,
+      citations: [] as Citation[],
+    }
+  }
+
+  const citations: Citation[] = matches.map(({ result }, index) => ({
+    number: index + 1,
+    evidence_id: result.evidence_id,
+    evidence_filename: result.evidence_filename,
+    snippet: result.content,
+    page: result.page,
+    timestamp: result.timestamp,
+    chunk_id: result.chunk_id,
+  }))
+  if (isSummaryRequest) {
+    const summary = matches.map(({ result }, index) =>
+      `• ${result.evidence_filename}: ${result.content} [${index + 1}]`
+    ).join('\n\n')
+    return {
+      answer: `Here’s a summary of the matching evidence:\n\n${summary}\n\nThis summary reflects the indexed excerpts available for this file.`,
+      citations,
+    }
+  }
+
+  const excerpts = matches.map(({ result }, index) =>
+    `[${index + 1}] ${result.evidence_filename}${result.page ? `, page ${result.page}` : ''}: “${result.content}”`
+  )
+
+  return {
+    answer: `I found ${matches.length} relevant exhibit${matches.length === 1 ? '' : 's'} for “${question.trim()}”:\n\n${excerpts.join('\n\n')}\n\nThese excerpts are the matching records I can cite. They may not capture the full context of each document.`,
+    citations,
+  }
+}
 
 export const handlers = [
   // ─── Cases ────────────────────────────────────────────────────────────────
@@ -233,13 +356,13 @@ export const handlers = [
 
   // ─── Chat (SSE streaming mock) ────────────────────────────────────────────
 
-  http.post('/api/v1/cases/:caseId/chat', async ({ request }) => {
+  http.post('/api/v1/cases/:caseId/chat', async ({ params, request }) => {
     await delay(100)
     const body = await request.json() as { message: string; session_id?: string }
     const userMessage = body.message ?? ''
 
-    const assistantTokens = mockMessages[1].content.split(' ')
-    const citations = mockMessages[1].citations
+    const { answer, citations } = createMockChatAnswer(params.caseId as string, userMessage)
+    const assistantTokens = answer.split(/(?<=\s)/)
 
     const stream = new ReadableStream({
       async start(controller) {
@@ -251,8 +374,8 @@ export const handlers = [
 
         // Stream tokens
         for (const token of assistantTokens) {
-          await delay(30)
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'token', content: token + ' ' })}\n\n`))
+          await delay(12)
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'token', content: token })}\n\n`))
         }
 
         // Send citations

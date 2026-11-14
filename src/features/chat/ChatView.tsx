@@ -10,7 +10,6 @@ import {
   ExternalLink,
 } from 'lucide-react'
 import { useSSEChat } from '@/hooks/useSSE'
-import { mockMessages } from '@/mocks/data'
 import type { ChatMessage, Citation } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -21,7 +20,7 @@ export default function ChatView() {
   const { caseId } = useParams<{ caseId: string }>()
   const currentCaseId = caseId || 'case-001'
 
-  const [messages, setMessages] = useState<ChatMessage[]>(mockMessages)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [activeCitation, setActiveCitation] = useState<Citation | null>(null)
 
@@ -76,6 +75,14 @@ export default function ChatView() {
     },
     onError: (err) => {
       console.error('SSE Error:', err)
+      setMessages((prev) => {
+        const last = prev[prev.length - 1]
+        if (!last || last.id !== 'streaming-msg') return prev
+        return [
+          ...prev.slice(0, -1),
+          { ...last, id: `msg-${Date.now()}`, content: `I couldn't complete that request: ${err.message}` },
+        ]
+      })
     },
   })
 
@@ -107,7 +114,11 @@ export default function ChatView() {
     currentStreamingMsgRef.current = ''
     setMessages((prev) => [...prev, newUserMsg, placeholderAssistant])
 
-    await sendMessage(currentCaseId, userText)
+    const history = messages
+      .filter((message) => message.role === 'user' || message.role === 'assistant')
+      .slice(-8)
+      .map(({ role, content }) => ({ role, content }))
+    await sendMessage(currentCaseId, userText, undefined, history)
   }
 
   return (

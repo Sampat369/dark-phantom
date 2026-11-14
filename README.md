@@ -47,14 +47,14 @@ npm install
 # Copy environment variables
 cp .env.example .env
 
-# Run development server (MSW mock enabled by default)
+# Run the frontend with the local API and Ollama
 npm run dev
 ```
 
 Open [http://localhost:5173](http://localhost:5173) in your browser.
 
-- `VITE_USE_MOCKS=true` runs with realistic mock cases (*Harrison v. Meridian Corp*, *DataBreach 2024*).
-- `VITE_USE_MOCKS=false` connects to the live FastAPI backend at `http://localhost:8000/api/v1`.
+- `VITE_USE_MOCKS=false` connects to the FastAPI backend at `http://localhost:8000/api/v1` and uses Ollama for evidence-grounded chat.
+- Set `VITE_USE_MOCKS=true` to use the demo data and mock chat instead.
 
 ### 2. Backend (FastAPI + Ollama)
 
@@ -67,8 +67,8 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -e .[test]
 
 # Start local Ollama models
-ollama pull llama3.1:8b
-ollama pull nomic-embed-text
+ollama pull llama3.2:3b
+ollama pull bge-large
 
 # Run FastAPI server
 uvicorn app.main:app --reload

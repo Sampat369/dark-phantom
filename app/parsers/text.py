@@ -1,12 +1,17 @@
 from pathlib import Path
+from zipfile import ZipFile
+from xml.etree import ElementTree
 def extract(path: str, mime: str):
     p=Path(path); ext=p.suffix.lower()
     if ext==".pdf":
-        import pdfplumber
-        with pdfplumber.open(p) as pdf: return [(page.extract_text() or "", {"page":i+1}) for i,page in enumerate(pdf.pages)]
+        from pypdf import PdfReader
+        return [(page.extract_text() or "", {"page":i+1}) for i,page in enumerate(PdfReader(p).pages)]
     if ext==".docx":
-        from docx import Document
-        return [("\n".join(x.text for x in Document(p).paragraphs), {})]
+        with ZipFile(p) as archive:
+            document = ElementTree.fromstring(archive.read("word/document.xml"))
+        namespace = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+        paragraphs = ["".join(node.text or "" for node in paragraph.findall(".//w:t", namespace)) for paragraph in document.findall(".//w:p", namespace)]
+        return [("\n".join(paragraphs), {})]
     if ext in {".eml",".msg"}:
         from email import policy
         from email.parser import BytesParser

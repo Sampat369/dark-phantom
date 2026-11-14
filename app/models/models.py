@@ -21,6 +21,8 @@ class EvidenceFile(Base):
 
 class Chunk(Base):
     __tablename__="chunks"; id: Mapped[str]=mapped_column(String(36),primary_key=True,default=uid); evidence_id: Mapped[str]=mapped_column(ForeignKey("evidence_files.id",ondelete="CASCADE"),index=True); text: Mapped[str]=mapped_column(Text); page: Mapped[int|None]=mapped_column(Integer); timestamp: Mapped[str|None]=mapped_column(String(80)); line_range: Mapped[str|None]=mapped_column(String(80)); message_index: Mapped[int|None]=mapped_column(Integer); embedding_id: Mapped[str|None]=mapped_column(String(255));
+class ChunkEmbedding(Base):
+    __tablename__="chunk_embeddings"; chunk_id: Mapped[str]=mapped_column(ForeignKey("chunks.id",ondelete="CASCADE"),primary_key=True); vector: Mapped[list]=mapped_column(JSON)
 
 class Entity(Base):
     __tablename__="entities"; id: Mapped[str]=mapped_column(String(36),primary_key=True,default=uid); case_id: Mapped[str]=mapped_column(ForeignKey("cases.id",ondelete="CASCADE"),index=True); type: Mapped[EntityType]=mapped_column(Enum(EntityType)); value: Mapped[str]=mapped_column(String(500)); normalized_value: Mapped[str]=mapped_column(String(500),index=True)
