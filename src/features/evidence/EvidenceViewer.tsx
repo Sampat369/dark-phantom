@@ -23,6 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
 import { API_BASE_URL } from '@/lib/constants'
+import { toast } from 'sonner'
 
 export default function EvidenceViewer() {
   const { caseId, evidenceId } = useParams<{ caseId: string; evidenceId: string }>()
@@ -36,8 +37,24 @@ export default function EvidenceViewer() {
     ? `${API_BASE_URL}/evidence/${encodeURIComponent(evidenceId)}/file`
     : ''
 
-  const handleVerify = () => {
-    if (evidenceId) verify.mutate(evidenceId)
+  const handleVerify = async () => {
+    if (!evidenceId) return
+    try {
+      const result = await verify.mutateAsync(evidenceId)
+      if (result.valid) {
+        toast.success('Integrity verified', {
+          description: 'The file matches its recorded SHA-256 and MD5 checksums.',
+        })
+      } else {
+        toast.error('Integrity check failed', {
+          description: 'The file does not match its recorded checksums.',
+        })
+      }
+    } catch (error) {
+      toast.error('Could not verify file', {
+        description: error instanceof Error ? error.message : 'Please try again.',
+      })
+    }
   }
 
   if (isLoading) {
@@ -227,7 +244,7 @@ export default function EvidenceViewer() {
                     </span>
                   )}
                   {item.integrity_status === 'unchecked' && (
-                    <span className="text-muted-foreground">Unchecked</span>
+                    <span className="text-muted-foreground">Not yet verified</span>
                   )}
                 </div>
               </div>

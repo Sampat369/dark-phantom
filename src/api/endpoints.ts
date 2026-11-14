@@ -2,6 +2,7 @@ import { apiClient } from './client'
 import type {
   Case,
   Evidence,
+  IntegrityStatus,
   EvidenceChunk,
   CustodyEvent,
   Entity,
@@ -39,7 +40,7 @@ export const evidenceApi = {
   getCustodyLog: (id: string) =>
     apiClient.get<PaginatedResponse<CustodyEvent>>(`/evidence/${id}/custody-log`),
   verify: (id: string) =>
-    apiClient.post<{ evidence_id: string; integrity_status: string; verified_at: string }>(
+    apiClient.post<{ evidence_id: string; integrity_status: IntegrityStatus; valid: boolean; sha256: string; md5: string; verified_at: string }>(
       `/evidence/${id}/verify`
     ),
 }

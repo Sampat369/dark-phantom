@@ -30,8 +30,19 @@ export function Sidebar() {
   const navigate = useNavigate()
   const { caseId: paramCaseId } = useParams<{ caseId?: string }>()
   const activeCaseId = useAppStore((s) => s.activeCaseId)
-  const currentCaseId = paramCaseId || activeCaseId || 'case-001'
-  const { data: currentCase } = useCase(currentCaseId)
+  const currentCaseId = paramCaseId || activeCaseId
+  const {
+    data: currentCase,
+    isLoading: isCaseLoading,
+    isError: isCaseError,
+  } = useCase(currentCaseId)
+  const caseLabel = currentCase?.name || (
+    isCaseLoading
+      ? 'Loading case…'
+      : isCaseError
+        ? 'Case unavailable'
+        : 'No active case selected'
+  )
 
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useAppStore((s) => s.toggleSidebar)
@@ -43,48 +54,52 @@ export function Sidebar() {
       to: '/cases',
       matchPrefix: false,
     },
-    {
-      label: 'Evidence',
-      icon: FileSearch,
-      to: `/cases/${currentCaseId}/evidence`,
-      matchPrefix: true,
-    },
-    {
-      label: 'Chat',
-      icon: MessageSquare,
-      to: `/cases/${currentCaseId}/chat`,
-      matchPrefix: true,
-    },
-    {
-      label: 'Timeline',
-      icon: Clock,
-      to: `/cases/${currentCaseId}/timeline`,
-      matchPrefix: true,
-    },
-    {
-      label: 'Entities',
-      icon: Network,
-      to: `/cases/${currentCaseId}/entities`,
-      matchPrefix: true,
-    },
-    {
-      label: 'Inconsistencies',
-      icon: AlertTriangle,
-      to: `/cases/${currentCaseId}/inconsistencies`,
-      matchPrefix: true,
-    },
-    {
-      label: 'Duplicates',
-      icon: Copy,
-      to: `/cases/${currentCaseId}/duplicates`,
-      matchPrefix: true,
-    },
-    {
-      label: 'Summary',
-      icon: FileText,
-      to: `/cases/${currentCaseId}/summary`,
-      matchPrefix: true,
-    },
+    ...(currentCaseId
+      ? [
+          {
+            label: 'Evidence',
+            icon: FileSearch,
+            to: `/cases/${currentCaseId}/evidence`,
+            matchPrefix: true,
+          },
+          {
+            label: 'Chat',
+            icon: MessageSquare,
+            to: `/cases/${currentCaseId}/chat`,
+            matchPrefix: true,
+          },
+          {
+            label: 'Timeline',
+            icon: Clock,
+            to: `/cases/${currentCaseId}/timeline`,
+            matchPrefix: true,
+          },
+          {
+            label: 'Entities',
+            icon: Network,
+            to: `/cases/${currentCaseId}/entities`,
+            matchPrefix: true,
+          },
+          {
+            label: 'Inconsistencies',
+            icon: AlertTriangle,
+            to: `/cases/${currentCaseId}/inconsistencies`,
+            matchPrefix: true,
+          },
+          {
+            label: 'Duplicates',
+            icon: Copy,
+            to: `/cases/${currentCaseId}/duplicates`,
+            matchPrefix: true,
+          },
+          {
+            label: 'Summary',
+            icon: FileText,
+            to: `/cases/${currentCaseId}/summary`,
+            matchPrefix: true,
+          },
+        ]
+      : []),
   ]
 
   const isActive = (item: typeof navItems[0]) => {
@@ -134,7 +149,7 @@ export function Sidebar() {
                   Active Case
                 </p>
                 <p className="text-sm font-semibold truncate leading-none">
-                  {currentCase?.name || 'Harrison v. Meridian Corp'}
+                  {caseLabel}
                 </p>
               </div>
             </div>
@@ -153,7 +168,7 @@ export function Sidebar() {
                 </button>
               </TooltipTrigger>
               <TooltipContent side="right">
-                <p className="font-medium">{currentCase?.name || 'Active Case'}</p>
+                <p className="font-medium">{caseLabel}</p>
                 <p className="text-xs text-muted-foreground">Click to switch</p>
               </TooltipContent>
             </Tooltip>

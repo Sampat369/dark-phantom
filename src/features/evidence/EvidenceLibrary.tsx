@@ -167,7 +167,7 @@ export default function EvidenceLibrary() {
                     )}
                     {item.integrity_status === 'unchecked' && (
                       <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                        <Clock className="h-3.5 w-3.5" /> Unchecked
+                        <Clock className="h-3.5 w-3.5" /> Not yet verified
                       </span>
                     )}
                   </td>

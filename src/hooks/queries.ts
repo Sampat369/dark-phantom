@@ -118,9 +118,13 @@ export function useVerifyEvidence() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => evidenceApi.verify(id),
-    onSuccess: (_, id) => {
-      qc.invalidateQueries({ queryKey: ['evidence-item', id] })
-      qc.invalidateQueries({ queryKey: ['custody-log', id] })
+    onSuccess: (result, id) => {
+      qc.setQueryData<Evidence>(['evidence-item', id], (current) =>
+        current ? { ...current, integrity_status: result.integrity_status } : current
+      )
+      void qc.invalidateQueries({ queryKey: ['evidence-item', id] })
+      void qc.invalidateQueries({ queryKey: ['evidence'] })
+      void qc.invalidateQueries({ queryKey: ['custody-log', id] })
     },
   })
 }

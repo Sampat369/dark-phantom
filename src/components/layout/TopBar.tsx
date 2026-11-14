@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 export function TopBar() {
   const { caseId: paramCaseId } = useParams<{ caseId?: string }>()
   const activeCaseId = useAppStore((s) => s.activeCaseId)
-  const currentCaseId = paramCaseId || activeCaseId || 'case-001'
+  const currentCaseId = paramCaseId || activeCaseId
   const { data: currentCase } = useCase(currentCaseId)
 
   const theme = useAppStore((s) => s.theme)

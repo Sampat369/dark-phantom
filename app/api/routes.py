@@ -29,7 +29,7 @@ def _case_read(case: Case, evidence_count: int = 0) -> dict:
         "tags": [],
     }
 
-def _evidence_read(evidence: EvidenceFile) -> dict:
+def _evidence_read(evidence: EvidenceFile, integrity_status: str = "unchecked") -> dict:
     extension = Path(evidence.original_filename).suffix.lower()
     evidence_type = {
         ".pdf": "pdf", ".png": "image", ".jpg": "image", ".jpeg": "image",
@@ -48,7 +48,7 @@ def _evidence_read(evidence: EvidenceFile) -> dict:
         "type": evidence_type,
         "size": evidence.size,
         "sha256": evidence.sha256,
-        "integrity_status": "unchecked",
+        "integrity_status": integrity_status,
         "processing_status": evidence.processing_status.value,
         "upload_date": evidence.uploaded_at,
         "processed_at": None,
@@ -58,6 +58,25 @@ def _evidence_read(evidence: EvidenceFile) -> dict:
         "duplicate_of": None,
         "metadata": evidence.extracted_metadata or {},
     }
+
+async def _evidence_integrity_statuses(db: AsyncSession, evidence_ids: list[str]) -> dict[str, str]:
+    if not evidence_ids:
+        return {}
+    events = (await db.execute(
+        select(CustodyLogEntry)
+        .where(
+            CustodyLogEntry.evidence_id.in_(evidence_ids),
+            CustodyLogEntry.action == "verification",
+        )
+        .order_by(CustodyLogEntry.timestamp.desc())
+    )).scalars().all()
+    statuses = {}
+    for event in events:
+        if event.evidence_id not in statuses:
+            statuses[event.evidence_id] = (
+                "verified" if (event.details or {}).get("valid") is True else "mismatch"
+            )
+    return statuses
 
 def _words(value: str) -> set[str]:
     stop_words = {"about", "after", "again", "and", "are", "can", "did", "does", "for", "from", "have", "her", "his", "how", "into", "is", "it", "me", "my", "of", "on", "or", "our", "please", "say", "she", "should", "tell", "that", "the", "their", "them", "then", "there", "these", "they", "this", "to", "was", "were", "what", "when", "where", "which", "who", "why", "with", "would", "you", "your"}
@@ -183,12 +202,15 @@ async def upload(case_id:str,background:BackgroundTasks,files:list[UploadFile]=F
     return {"items":out}
 @router.get("/cases/{case_id}/evidence")
 async def list_evidence(case_id:str,db:AsyncSession=Depends(get_db)):
-    items=(await db.execute(select(EvidenceFile).where(EvidenceFile.case_id==case_id).order_by(EvidenceFile.uploaded_at.desc()))).scalars().all(); return {"items":[_evidence_read(item) for item in items],"total":len(items),"page":1,"page_size":len(items),"has_next":False}
+    items=(await db.execute(select(EvidenceFile).where(EvidenceFile.case_id==case_id).order_by(EvidenceFile.uploaded_at.desc()))).scalars().all()
+    statuses=await _evidence_integrity_statuses(db,[item.id for item in items])
+    return {"items":[_evidence_read(item,statuses.get(item.id,"unchecked")) for item in items],"total":len(items),"page":1,"page_size":len(items),"has_next":False}
 @router.get("/evidence/{evidence_id}")
 async def get_evidence(evidence_id:str,db:AsyncSession=Depends(get_db)):
     evidence=await db.get(EvidenceFile,evidence_id)
     if not evidence: raise HTTPException(404,"Evidence not found")
-    return _evidence_read(evidence)
+    statuses=await _evidence_integrity_statuses(db,[evidence.id])
+    return _evidence_read(evidence,statuses.get(evidence.id,"unchecked"))
 @router.get("/evidence/{evidence_id}/file")
 async def get_file(evidence_id:str,db:AsyncSession=Depends(get_db)):
     e=await db.get(EvidenceFile,evidence_id)
@@ -204,7 +226,10 @@ async def verify(evidence_id:str,db:AsyncSession=Depends(get_db)):
     h=hashlib.sha256(); m=hashlib.md5()
     with open(e.storage_path,"rb") as f:
         while b:=f.read(1024*1024): h.update(b); m.update(b)
-    ok=h.hexdigest()==e.sha256 and m.hexdigest()==e.md5; await append_entry(db,e.id,"verification","api",{"valid":ok}); await db.commit(); return {"valid":ok,"sha256":h.hexdigest(),"md5":m.hexdigest()}
+    ok=h.hexdigest()==e.sha256 and m.hexdigest()==e.md5
+    await append_entry(db,e.id,"verification","api",{"valid":ok})
+    await db.commit()
+    return {"evidence_id":e.id,"valid":ok,"integrity_status":"verified" if ok else "mismatch","sha256":h.hexdigest(),"md5":m.hexdigest(),"verified_at":datetime.now(timezone.utc).isoformat()}
 @router.get("/evidence/{evidence_id}/custody-log")
 async def custody(evidence_id:str,db:AsyncSession=Depends(get_db)):
     events=(await db.execute(select(CustodyLogEntry).where(CustodyLogEntry.evidence_id==evidence_id).order_by(CustodyLogEntry.timestamp))).scalars().all(); items=[{"id":event.id,"evidence_id":event.evidence_id,"action":event.action,"performed_by":event.actor,"timestamp":event.timestamp,"notes":json.dumps(event.details) if event.details else None,"hash_before":event.prev_hash,"hash_after":event.entry_hash} for event in events]; return {"items":items,"total":len(items),"page":1,"page_size":len(items),"has_next":False}
