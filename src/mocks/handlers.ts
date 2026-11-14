@@ -14,7 +14,7 @@ import {
   mockCustodyLog,
   mockChunks,
 } from './data'
-import type { Case, Inconsistency } from '@/types'
+import type { Case, Evidence, Inconsistency } from '@/types'
 
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms))
 
@@ -75,29 +75,45 @@ export const handlers = [
     return HttpResponse.json({ items, total: items.length, page: 1, page_size: 50, has_next: false })
   }),
 
-  http.post('/api/v1/cases/:caseId/evidence', async ({ params }) => {
+  http.post('/api/v1/cases/:caseId/evidence', async ({ params, request }) => {
     await delay(500)
-    // Simulate upload — return queued item
-    const newEv = {
-      id: `ev-${Date.now()}`,
-      case_id: params.caseId as string,
-      filename: 'uploaded_file.pdf',
-      original_filename: 'uploaded_file.pdf',
-      type: 'pdf' as const,
-      size: 102400,
-      sha256: '',
-      integrity_status: 'unchecked' as const,
-      processing_status: 'queued' as const,
-      upload_date: new Date().toISOString(),
-      processed_at: null,
-      page_count: null,
-      duration: null,
-      is_duplicate: false,
-      duplicate_of: null,
-      metadata: {},
+    const formData = await request.formData()
+    const files = formData.getAll('files').filter((entry): entry is File => entry instanceof File)
+    if (files.length === 0) {
+      return HttpResponse.json({ detail: 'Select at least one file to upload' }, { status: 400 })
     }
-    mockEvidence.push(newEv)
-    return HttpResponse.json(newEv, { status: 201 })
+
+    const items = files.map((file) => {
+      const extension = file.name.split('.').pop()?.toLowerCase() || ''
+      const type: Evidence['type'] = extension === 'pdf' ? 'pdf'
+        : ['jpg', 'jpeg', 'png', 'gif', 'webp', 'tiff'].includes(extension) ? 'image'
+        : ['eml', 'msg'].includes(extension) ? 'email'
+        : ['mp3', 'wav', 'm4a', 'ogg'].includes(extension) ? 'audio'
+        : ['mp4', 'mov', 'avi'].includes(extension) ? 'video'
+        : ['txt', 'doc', 'docx'].includes(extension) ? 'document'
+        : 'other'
+      const newEv = {
+        id: `ev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        case_id: params.caseId as string,
+        filename: file.name,
+        original_filename: file.name,
+        type,
+        size: file.size,
+        sha256: '',
+        integrity_status: 'unchecked' as const,
+        processing_status: 'queued' as const,
+        upload_date: new Date().toISOString(),
+        processed_at: null,
+        page_count: null,
+        duration: null,
+        is_duplicate: false,
+        duplicate_of: null,
+        metadata: {},
+      }
+      mockEvidence.push(newEv)
+      return newEv
+    })
+    return HttpResponse.json({ items }, { status: 201 })
   }),
 
   http.get('/api/v1/evidence/:id', async ({ params }) => {

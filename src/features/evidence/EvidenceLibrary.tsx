@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   FileSearch,
@@ -10,20 +10,38 @@ import {
   Eye,
   FileText,
 } from 'lucide-react'
-import { useEvidence } from '@/hooks/queries'
+import { useEvidence, useUploadEvidence } from '@/hooks/queries'
 import { formatBytes, formatDate, getEvidenceTypeIcon, getStatusColor } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { toast } from 'sonner'
 
 export default function EvidenceLibrary() {
   const { caseId } = useParams<{ caseId: string }>()
   const navigate = useNavigate()
   const { data, isLoading } = useEvidence(caseId)
+  const uploadEvidence = useUploadEvidence()
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [filterType, setFilterType] = useState<string>('all')
 
   const items = data?.items || []
   const filtered = filterType === 'all' ? items : items.filter((i) => i.type === filterType)
+
+  const handleFilesSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? [])
+    event.target.value = ''
+    if (!caseId || files.length === 0) return
+
+    try {
+      const result = await uploadEvidence.mutateAsync({ caseId, files })
+      toast.success(`${result.items.length} file${result.items.length === 1 ? '' : 's'} uploaded`)
+    } catch (error) {
+      toast.error('Failed to upload evidence', {
+        description: error instanceof Error ? error.message : 'Please try again.',
+      })
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -37,13 +55,21 @@ export default function EvidenceLibrary() {
         </div>
 
         <div className="flex items-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept=".pdf,.txt,.csv,.json,.eml,.mbox,.msg,.docx,.png,.jpg,.jpeg,.mp3,.wav"
+            className="hidden"
+            onChange={handleFilesSelected}
+          />
           <Button variant="outline" className="gap-2">
             <Filter className="h-4 w-4" />
             Filter
           </Button>
-          <Button className="gap-2">
+          <Button className="gap-2" disabled={uploadEvidence.isPending || !caseId} onClick={() => fileInputRef.current?.click()}>
             <Upload className="h-4 w-4" />
-            Upload Evidence
+            {uploadEvidence.isPending ? 'Uploading...' : 'Upload Evidence'}
           </Button>
         </div>
       </div>

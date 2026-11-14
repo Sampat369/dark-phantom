@@ -33,7 +33,7 @@ export const evidenceApi = {
     apiClient.get<PaginatedResponse<Evidence>>(`/cases/${caseId}/evidence`),
   get: (id: string) => apiClient.get<Evidence>(`/evidence/${id}`),
   upload: (caseId: string, formData: FormData) =>
-    apiClient.postForm<Evidence>(`/cases/${caseId}/evidence`, formData),
+    apiClient.postForm<{ items: Evidence[] }>(`/cases/${caseId}/evidence`, formData),
   getChunks: (id: string) =>
     apiClient.get<PaginatedResponse<EvidenceChunk>>(`/evidence/${id}/chunks`),
   getCustodyLog: (id: string) =>

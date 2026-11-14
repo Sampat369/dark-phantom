@@ -84,6 +84,18 @@ export function useEvidenceItem(id: string | undefined) {
   })
 }
 
+export function useUploadEvidence() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ caseId, files }: { caseId: string; files: File[] }) => {
+      const formData = new FormData()
+      files.forEach((file) => formData.append('files', file))
+      return evidenceApi.upload(caseId, formData)
+    },
+    onSuccess: (_, { caseId }) => qc.invalidateQueries({ queryKey: ['evidence', caseId] }),
+  })
+}
+
 export function useEvidenceChunks(id: string | undefined) {
   return useQuery({
     queryKey: ['evidence-chunks', id],
